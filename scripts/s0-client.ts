@@ -1,10 +1,14 @@
 const base = process.env.MYOPC_BASE_URL || "http://127.0.0.1:3000";
+const authHeaders: Record<string, string> = process.env.MYOPC_USERNAME && process.env.MYOPC_PASSWORD
+  ? { authorization: `Basic ${Buffer.from(`${process.env.MYOPC_USERNAME}:${process.env.MYOPC_PASSWORD}`).toString("base64")}` }
+  : {};
 export {};
 const mode = process.argv[2];
 const trialId = process.argv[3];
 
 async function request(path: string, method = "GET", body?: unknown, requestId?: string) {
-  const response = await fetch(`${base}/api/v1${path}`, { method, headers: body ? { "content-type": "application/json", "x-client-request-id": requestId || crypto.randomUUID() } : undefined, body: body ? JSON.stringify(body) : undefined });
+  const headers: Record<string, string> = body ? { "content-type": "application/json", "x-client-request-id": requestId || crypto.randomUUID(), ...authHeaders } : authHeaders;
+  const response = await fetch(`${base}/api/v1${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   const data = await response.json();
   if (!response.ok) throw new Error(`${response.status} ${JSON.stringify(data)}`);
   return data;

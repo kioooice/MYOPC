@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BusinessError, createCapture, createDraft, createTrial, getContext, startTrial, updateTrial } from "../lib/business";
+import { BusinessError, createCapture, createDraft, createProject, createTrial, getContext, getProjects, startTrial, updateTrial } from "../lib/business";
 import { closeDbForTests } from "../lib/db";
 
 let directory: string;
@@ -40,5 +40,13 @@ describe("S0 business invariants", () => {
     createDraft({ trial_id: trial.id, title: "第一版", content: "# 可审阅内容" }, "draft-key");
     const context = getContext(String(trial.id));
     expect((context.deliverables as Array<{ versions: unknown[] }>)[0].versions).toHaveLength(1);
+  });
+
+  it("registers a project with a planning category", () => {
+    const result = createProject({ name: "Helm", category: "tool", path: "D:\\Projects\\helm" }, "project-key");
+    expect(result.body).toMatchObject({ name: "Helm", category: "tool", path: "D:\\Projects\\helm" });
+    expect(getProjects().categories.map((category) => category.id)).toEqual(["tool", "content", "business", "research"]);
+    expect(getProjects().projects).toHaveLength(1);
+    expect(() => createProject({ name: "Invalid", category: "other" }, "invalid-project-key")).toThrowError(/类别无效/);
   });
 });

@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS trials (
   environment TEXT, actual_result TEXT, revision INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL,
+  path TEXT, description TEXT, status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS deliverables (
   id TEXT PRIMARY KEY, trial_id TEXT NOT NULL REFERENCES trials(id),
   title TEXT NOT NULL, type TEXT NOT NULL,
@@ -83,6 +88,7 @@ export function getDb() {
     instance.exec("UPDATE trials SET capture_id=(SELECT capture_id FROM methods WHERE methods.id=trials.method_id) WHERE method_id IS NOT NULL");
   }
   instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, ?)").run(new Date().toISOString());
+  instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (3, ?)").run(new Date().toISOString());
   return instance;
 }
 

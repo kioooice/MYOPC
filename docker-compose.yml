@@ -1,0 +1,16 @@
+services:
+  myopc:
+    build:
+      context: .
+    container_name: myopc
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      MYOPC_DATA_DIR: /data
+    ports:
+      - "127.0.0.1:3010:3000"
+    volumes:
+      - myopc-data:/data
+
+volumes:
+  myopc-data:

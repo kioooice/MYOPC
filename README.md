@@ -4,7 +4,7 @@
 
 MYOPC 承载一个持续循环：发现需求或可能性 → 结合个人知识、能力与资源 → 形成尝试并行动 → 获得成果和外部反馈 → 更新方法与判断 → 影响下一次选择和行动。入口不固定，可以从一篇帖子、一个需求、已有能力或一次失败开始。副业经营是当前最明确的应用主线，个人能力和信息积累让下一轮拥有不同的起点。Codex 负责主要的规划、执行与分析，MYOPC 提供持续可用的业务界面与记录。
 
-**当前状态：S0 最小应用已可在本机运行；普通 HTTP 联动已验证，当前 Codex 对话直连仍未验证。**
+**当前状态：S0 最小应用已可在本机运行，并已部署到 `https://seizemoment.xyz` 作为两台电脑共用的单一数据服务。**
 
 ## 打开以后应该能做什么
 
@@ -72,6 +72,10 @@ Windows 直接双击根目录的 `start.bat`，它会自动安装首次运行所
 
 默认数据保存在 `%LOCALAPPDATA%\MYOPC\data`，服务地址为 `http://127.0.0.1:3000`。可用 `-DataDir D:\private\myopc -Port 3100` 自定义；`-Production` 会先构建再启动生产服务，`-Check` 只检查环境而不启动。
 
+多台电脑共用时使用服务器上的 Docker 部署：`Dockerfile` 构建 Next.js 服务，`docker-compose.yml` 将 SQLite 数据保存到持久化卷，由 OpenResty 通过 HTTPS 域名反向代理。不要让每台电脑各自启动一份数据库，否则数据不会同步。
+
+Codex 脚本客户端连接共享服务时设置 `MYOPC_BASE_URL=https://seizemoment.xyz`、`MYOPC_USERNAME` 和 `MYOPC_PASSWORD`；本机开发时省略这三个远程配置即可继续使用本地服务。
+
 也可以手动启动：
 
 ```powershell
@@ -80,7 +84,7 @@ $env:MYOPC_DATA_DIR="C:\path\to\private\myopc-data"
 npm run dev
 ```
 
-打开 `http://127.0.0.1:3000` 后，可以直接从左侧“新建行动”或主区输入框，以需求、资料或失败开始，不需要运行命令。`npm run s0:start` 与 `npm run s0:resume` 仅保留为开发联动验收脚本，不是用户使用入口。
+打开 `http://127.0.0.1:3000` 后，MYOPC 作为行动、成果、反馈和下一步的面板使用；需求、资料或失败等具体输入与执行在 Codex 中完成，再由 Codex 写入这里。`npm run s0:start` 与 `npm run s0:resume` 仅保留为开发联动验收脚本，不是用户使用入口。
 
 已实现的最小 API 位于 `/api/v1`：`GET /health`、`GET /dashboard`、`GET /context?trial_id=...`、`POST /starts`、`POST /drafts`、`POST /captures`、`POST /methods`、`POST /trials`、`POST /deliverables`、`POST /deliverables/:id/versions`、`POST /feedback`、`POST /decisions`、`POST /deliverables/:id/accept`。所有写入请求必须带 `X-Client-Request-Id`；可变尝试更新还必须带 `expected_revision`。
 

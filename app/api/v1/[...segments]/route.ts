@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { acceptVersion, BusinessError, createCapture, createDecision, createDeliverable, createDraft, createFeedback, createMethod, createTrial, createVersion, getContext, getDashboard, getEvents, startTrial, updateTrial } from "@/lib/business";
+import { acceptVersion, BusinessError, createCapture, createDecision, createDeliverable, createDraft, createFeedback, createMethod, createProject, createTrial, createVersion, getContext, getDashboard, getEvents, getProjects, startTrial, updateTrial } from "@/lib/business";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +22,7 @@ export async function GET(request: NextRequest, context: Context) {
   try {
     if (segments[0] === "health") return NextResponse.json({ status: "ok", persistence: "sqlite" });
     if (segments[0] === "dashboard") return NextResponse.json(getDashboard());
+    if (segments[0] === "projects") return NextResponse.json(getProjects());
     if (segments[0] === "context") return NextResponse.json(getContext(request.nextUrl.searchParams.get("trial_id") || ""));
     if (segments[0] === "events") return NextResponse.json(getEvents(Number(request.nextUrl.searchParams.get("after") || 0)));
     return NextResponse.json({ error: "not_found" }, { status: 404 });
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest, context: Context) {
     if (key === "captures") return createCapture(body, requestId);
     if (key === "starts") return startTrial(body, requestId);
     if (key === "methods") return createMethod(body, requestId);
+    if (key === "projects") return createProject(body, requestId);
     if (key === "trials") return createTrial(body, requestId);
     if (key === "deliverables") return createDeliverable(body, requestId);
     if (key === "drafts") return createDraft(body, requestId);

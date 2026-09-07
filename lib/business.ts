@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { getDb } from "./db";
+import { PROJECT_CATEGORIES, type ProjectCategory } from "./project-categories";
+import { getProjectProfile } from "./project-profiles";
 
 type Json = Record<string, unknown>;
 type Stored = { status: number; body: Json };
@@ -70,6 +72,20 @@ export function createTrial(payload: Json, requestId?: string) {
     if (!row.title || !row.goal) throw new BusinessError(400, "trial_fields_required", "尝试标题和目标不能为空");
     getDb().prepare("INSERT INTO trials(id,title,goal,method_id,capture_id,status,environment,actual_result,revision,created_at,updated_at) VALUES (@id,@title,@goal,@method_id,@capture_id,@status,@environment,@actual_result,@revision,@created_at,@updated_at)").run(row);
     event("trial", row.id, "trial.created", row);
+    return { status: 201, body: row };
+  });
+}
+
+export function createProject(payload: Json, requestId?: string) {
+  return idempotent("POST /projects", requestId, payload, () => {
+    const name = String(payload.name || "").trim();
+    const category = String(payload.category || "").trim() as ProjectCategory;
+    if (!name) throw new BusinessError(400, "project_name_required", "项目名称不能为空");
+    if (!PROJECT_CATEGORIES.some((item) => item.id === category)) throw new BusinessError(400, "project_category_invalid", "项目类别无效");
+    const timestamp = now();
+    const row = { id: randomUUID(), name, category, path: payload.path ? String(payload.path) : null, description: payload.description ? String(payload.description) : null, status: payload.status || "active", created_at: timestamp, updated_at: timestamp };
+    getDb().prepare("INSERT INTO projects(id,name,category,path,description,status,created_at,updated_at) VALUES (@id,@name,@category,@path,@description,@status,@created_at,@updated_at)").run(row);
+    event("project", row.id, "project.created", row);
     return { status: 201, body: row };
   });
 }
@@ -204,6 +220,12 @@ export function getContext(trialId: string) {
 export function getDashboard() {
   const trials = getDb().prepare("SELECT * FROM trials ORDER BY updated_at DESC").all() as Json[];
   return { mode: "local_private_data", stage: "S0", trials: trials.map(hydrateTrial) };
+}
+
+export function getProjects() {
+  const rows = getDb().prepare("SELECT * FROM projects ORDER BY updated_at DESC, name ASC").all() as Array<Record<string, unknown>>;
+  const projects = rows.map((project) => ({ ...project, profile: getProjectProfile(project) }));
+  return { categories: PROJECT_CATEGORIES, projects };
 }
 
 export function getEvents(after: number) {

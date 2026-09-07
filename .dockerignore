@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+.myopc-data
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+coverage
+npm-debug.log*
+Dockerfile
+docker-compose.yml
