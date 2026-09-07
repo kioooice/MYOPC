@@ -8,7 +8,7 @@ export type ProjectProfile = {
 
 const PROJECT_PROFILES: Array<{ match: string[]; profile: ProjectProfile }> = [
   {
-    match: ["helm · 舵", "\\projects\\helm"],
+    match: ["helm · 舵", "helm"],
     profile: {
       summary: "从用户允许使用的记录中找出有依据、值得关注的变化和反复出现的问题，帮助用户理解自己的处境并作出判断。",
       highlights: ["桌面屏幕采集", "本地 OCR 与文本去重", "采集控制与隐私暂停", "按当天 OCR 片段手动生成报告"],
@@ -18,7 +18,7 @@ const PROJECT_PROFILES: Array<{ match: string[]; profile: ProjectProfile }> = [
     },
   },
   {
-    match: ["snipaste ocr", "\\snipaste-ocr"],
+    match: ["snipaste ocr"],
     profile: {
       summary: "给 Snipaste 免费版补上 OCR：截图后自动识别文字，结果写回剪贴板，也可以作为文字贴图留在屏幕上。",
       highlights: ["Ctrl+Alt+O 截图识别", "Ctrl+Alt+P 识别剪贴板图片", "本地 PP-OCR 离线识别", "可选 PaddleOCR 或百度 OCR", "识别结果写入剪贴板并贴到屏幕"],
@@ -29,7 +29,23 @@ const PROJECT_PROFILES: Array<{ match: string[]; profile: ProjectProfile }> = [
   },
 ];
 
-export function getProjectProfile(project: { name?: unknown; path?: unknown }): ProjectProfile | null {
-  const values = [String(project.name || ""), String(project.path || "")].map((value) => value.toLowerCase());
+export function parseProjectProfile(value: unknown): ProjectProfile | null {
+  if (!value) return null;
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    if (!parsed || typeof parsed !== "object") return null;
+    const profile = parsed as Partial<ProjectProfile>;
+    if (typeof profile.summary !== "string" || !Array.isArray(profile.highlights) || !Array.isArray(profile.usage) || typeof profile.stage !== "string" || typeof profile.stack !== "string") return null;
+    if (!profile.highlights.every((item) => typeof item === "string") || !profile.usage.every((item) => typeof item === "string")) return null;
+    return { summary: profile.summary, highlights: profile.highlights, usage: profile.usage, stage: profile.stage, stack: profile.stack };
+  } catch {
+    return null;
+  }
+}
+
+export function getProjectProfile(project: { name?: unknown; path?: unknown; profile_json?: unknown }): ProjectProfile | null {
+  const stored = parseProjectProfile(project.profile_json);
+  if (stored) return stored;
+  const values = [String(project.name || "")].map((value) => value.toLowerCase());
   return PROJECT_PROFILES.find(({ match }) => match.some((value) => values.some((candidate) => candidate.includes(value))))?.profile || null;
 }

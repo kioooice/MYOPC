@@ -6,7 +6,7 @@ MYOPC 承载一个持续循环：发现需求或可能性 → 结合个人知识
 
 **当前状态：S0 最小应用已可在本机运行，并已部署到 `https://seizemoment.xyz` 作为两台电脑共用的单一数据服务。**
 
-**下一阶段：真实项目跨电脑接续。** 从 [当前目标](docs/DELIVERY_PLAN.md) 与 [实际状态](docs/STATUS.md) 开始。已有固定样例往返不等于真实反馈处理通过；本次独立业务测试 6/6 通过，线上端到端与服务器配置未独立核实。
+**当前阶段：共享状态与真实接续。** 从 [当前目标](docs/DELIVERY_PLAN.md) 与 [实际状态](docs/STATUS.md) 开始。固定样例只作为测试夹具；真实反馈、线上接续和第二台实机仍分别记录证据。
 
 ## 产品期望（不代表全部已实现）
 
@@ -76,7 +76,7 @@ Windows 直接双击根目录的 `start.bat`，它会自动安装首次运行所
 
 多台电脑共用时使用服务器上的 Docker 部署：`Dockerfile` 构建 Next.js 服务，`docker-compose.yml` 将 SQLite 数据保存到持久化卷，由 OpenResty 通过 HTTPS 域名反向代理。不要让每台电脑各自启动一份数据库，否则数据不会同步。
 
-Codex 脚本客户端连接共享服务时设置 `MYOPC_BASE_URL=https://seizemoment.xyz`、`MYOPC_USERNAME` 和 `MYOPC_PASSWORD`；本机开发时省略这三个远程配置即可继续使用本地服务。
+Codex 脚本客户端连接共享服务时设置 `MYOPC_BASE_URL=https://seizemoment.xyz`、`MYOPC_USERNAME` 和 `MYOPC_PASSWORD`；本机开发时省略这三个远程配置即可继续使用本地服务。写入操作可设置 `MYOPC_REQUEST_ID` 或传 `--request-id`，网络结果不确定时用同一个请求 ID 重试，不会重复创建。
 
 也可以手动启动：
 
@@ -86,10 +86,28 @@ $env:MYOPC_DATA_DIR="C:\path\to\private\myopc-data"
 npm run dev
 ```
 
-打开 `http://127.0.0.1:3000` 后，MYOPC 作为行动、成果、反馈和下一步的面板使用；需求、资料或失败等具体输入与执行在 Codex 中完成，再由 Codex 写入这里。`npm run s0:start` 与 `npm run s0:resume` 仅保留为开发联动验收脚本，不是用户使用入口。
+打开 `http://127.0.0.1:3000` 后，MYOPC 作为行动、成果、反馈和下一步的面板使用；需求、资料或失败等具体输入与执行在 Codex 中完成，再由 Codex 写入这里。面板会定时刷新共享状态，也可以手动刷新；网络失败会保留当前页面并提供重连。`npm run s0:start` 与 `npm run s0:resume` 仅保留为历史接口验收脚本。
 
-已实现的最小 API 位于 `/api/v1`：`GET /health`、`GET /dashboard`、`GET /context?trial_id=...`、`POST /starts`、`POST /drafts`、`POST /captures`、`POST /methods`、`POST /trials`、`POST /deliverables`、`POST /deliverables/:id/versions`、`POST /feedback`、`POST /decisions`、`POST /deliverables/:id/accept`。所有写入请求必须带 `X-Client-Request-Id`；可变尝试更新还必须带 `expected_revision`。
+已实现的最小 API 位于 `/api/v1`：`GET /health`、`GET /dashboard`、`GET /events?after=...`、`GET /projects`、`GET /projects/:id`、`GET /context?trial_id=...`、`POST /starts`、`POST /drafts`、`POST /captures`、`POST /methods`、`POST /trials`、`POST /projects`、`PATCH /projects/:id`、`POST /projects/:id/locations`、`POST /deliverables`、`POST /deliverables/:id/versions`、`POST /feedback`、`POST /decisions`、`POST /deliverables/:id/accept`。所有写入请求必须带 `X-Client-Request-Id`；可变尝试更新还必须带 `expected_revision`。
 
-当前尚未加入正式备份恢复命令。SQLite 使用 WAL，不能只复制运行中的 `myopc.sqlite` 当作一致性备份；应使用数据库一致性备份或受控停机方式，并包含相关文件及清单，恢复到隔离目录后验证关系。正式实现与实测结果由当前阶段补齐。
+接续客户端支持任意实际内容，不绑定固定演示文案：
+
+```powershell
+npm run continuity -- context --trial-id <id>
+npm run continuity -- start --title "行动标题" --goal "实际目标" --project-id <project-id> --code-commit <commit>
+npm run continuity -- draft --trial-id <id> --title "成果标题" --content-file .\draft.md
+npm run continuity -- feedback --version-id <version-id> --kind revision --content "具体修改意见" --request-id feedback-001
+npm run continuity -- revise --deliverable-id <deliverable-id> --feedback-id <feedback-id> --content-file .\v2.md
+```
+
+SQLite 使用 WAL，不能只复制运行中的 `myopc.sqlite`。一致性备份与隔离恢复命令：
+
+```powershell
+npm run db:backup -- --output D:\private\myopc-backups\myopc.sqlite
+npm run db:verify -- --file D:\private\myopc-backups\myopc.sqlite
+npm run db:restore -- --file D:\private\myopc-backups\myopc.sqlite --directory D:\private\myopc-restore-check
+```
+
+备份和恢复会运行 SQLite 完整性、外键和表计数检查；恢复目标已有数据库时会拒绝覆盖。
 
 本仓库为公开代码仓库。真实稿件、未发布素材、收入明细、账号凭据及运行数据库放在私有运行存储中，不能随代码提交。

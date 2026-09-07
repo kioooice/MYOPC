@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BusinessError, createCapture, createDraft, createProject, createTrial, getContext, getProjects, startTrial, updateTrial } from "../lib/business";
+import { backupDatabase, restoreDatabase } from "../lib/backup";
+import { BusinessError, createCapture, createDraft, createFeedback, createProject, createProjectLocation, createTrial, createVersion, getContext, getProject, getProjects, startTrial, updateTrial } from "../lib/business";
 import { closeDbForTests } from "../lib/db";
 
 let directory: string;
@@ -48,5 +49,36 @@ describe("S0 business invariants", () => {
     expect(getProjects().categories.map((category) => category.id)).toEqual(["tool", "content", "business", "research"]);
     expect(getProjects().projects).toHaveLength(1);
     expect(() => createProject({ name: "Invalid", category: "other" }, "invalid-project-key")).toThrowError(/类别无效/);
+  });
+
+  it("continues arbitrary project work across locations and feedback-driven versions", () => {
+    const project = createProject({ name: "真实工具", category: "tool", description: "用于接续验证", profile: { summary: "工具介绍", highlights: ["能力"], usage: ["使用"], stage: "验证", stack: "TypeScript" } }, "continuity-project").body;
+    createProjectLocation(String(project.id), { label: "电脑 A", environment: "Windows", repository_url: "https://github.com/example/tool", branch: "main", commit_sha: "aaa111" }, "location-a");
+    createProjectLocation(String(project.id), { label: "服务器", environment: "Linux", deploy_url: "https://example.com", commit_sha: "aaa111" }, "location-server");
+    const trial = startTrial({ kind: "need", title: "真实工具接续", content: "让下一台电脑找到同一个目标", project_id: project.id, code_repository: "https://github.com/example/tool", code_branch: "main", code_commit: "aaa111", next_step: "读取反馈后继续" }, "continuity-start").body;
+    const draft = createDraft({ trial_id: trial.id, title: "第一版真实成果", content: "第一版内容来自当前工作的实际材料。" }, "continuity-draft").body as { id: string; version: { id: string } };
+    const feedbackV1 = createFeedback({ version_id: draft.version.id, content: "把第一句改成明确的使用结果。", kind: "revision", source: "user" }, "continuity-feedback-1").body as { id: string };
+    const version2 = createVersion(String(draft.id), { content: "第二版内容：先说清楚使用结果，再说明实现方式。", handles_feedback_ids: [feedbackV1.id] }, "continuity-version-2").body as { id: string };
+    const feedbackV2 = createFeedback({ version_id: version2.id, content: "补充一个真实使用条件。", kind: "review", source: "user" }, "continuity-feedback-2").body as { id: string };
+    createVersion(String(draft.id), { content: "第三版内容：说明结果、实现方式和真实使用条件。", handles_feedback_ids: [feedbackV2.id] }, "continuity-version-3");
+
+    const detail = getProject(String(project.id));
+    expect(detail.locations).toHaveLength(2);
+    expect(detail.latest_trial).toMatchObject({ project_id: project.id, code_commit: "aaa111" });
+    expect(detail.latest_deliverable?.latest_version).toMatchObject({ ordinal: 3, content: expect.stringContaining("真实使用条件") });
+    expect(detail.open_feedback).toHaveLength(0);
+    expect(getContext(String(trial.id))).toMatchObject({ project_id: project.id, code_commit: "aaa111" });
+  });
+
+  it("backs up and restores a consistent isolated database", async () => {
+    createCapture({ title: "可恢复记录", content: "保留关系" }, "backup-capture");
+    const backup = join(directory, "backups", "myopc.sqlite");
+    const restoredDirectory = join(directory, "restored");
+    const report = await backupDatabase(backup);
+    const restored = await restoreDatabase(backup, restoredDirectory);
+    expect(report.ok).toBe(true);
+    expect(restored.source.ok).toBe(true);
+    expect(restored.restored.ok).toBe(true);
+    expect(restored.restored.tables.captures).toBe(1);
   });
 });

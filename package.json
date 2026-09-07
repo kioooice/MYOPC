@@ -10,7 +10,11 @@
     "lint": "eslint .",
     "test": "vitest run",
     "s0:start": "tsx scripts/s0-client.ts start",
-    "s0:resume": "tsx scripts/s0-client.ts resume"
+    "s0:resume": "tsx scripts/s0-client.ts resume",
+    "continuity": "tsx scripts/continuity-client.ts",
+    "db:backup": "tsx scripts/db-maintenance.ts backup",
+    "db:verify": "tsx scripts/db-maintenance.ts verify",
+    "db:restore": "tsx scripts/db-maintenance.ts restore"
   },
   "repository": {
     "type": "git",

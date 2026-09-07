@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { acceptVersion, BusinessError, createCapture, createDecision, createDeliverable, createDraft, createFeedback, createMethod, createProject, createTrial, createVersion, getContext, getDashboard, getEvents, getProjects, startTrial, updateTrial } from "@/lib/business";
+import { acceptVersion, BusinessError, createCapture, createDecision, createDeliverable, createDraft, createFeedback, createMethod, createProject, createProjectLocation, createTrial, createVersion, getContext, getDashboard, getEvents, getProject, getProjects, startTrial, updateProject, updateTrial } from "@/lib/business";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,8 +20,9 @@ function respond(operation: () => { status: number; body: Record<string, unknown
 export async function GET(request: NextRequest, context: Context) {
   const { segments } = await context.params;
   try {
-    if (segments[0] === "health") return NextResponse.json({ status: "ok", persistence: "sqlite" });
+    if (segments[0] === "health") return NextResponse.json({ status: "ok", persistence: "sqlite", release: process.env.MYOPC_RELEASE || "unknown" });
     if (segments[0] === "dashboard") return NextResponse.json(getDashboard());
+    if (segments[0] === "projects" && segments[1]) return NextResponse.json(getProject(segments[1]));
     if (segments[0] === "projects") return NextResponse.json(getProjects());
     if (segments[0] === "context") return NextResponse.json(getContext(request.nextUrl.searchParams.get("trial_id") || ""));
     if (segments[0] === "events") return NextResponse.json(getEvents(Number(request.nextUrl.searchParams.get("after") || 0)));
@@ -42,6 +43,7 @@ export async function POST(request: NextRequest, context: Context) {
     if (key === "starts") return startTrial(body, requestId);
     if (key === "methods") return createMethod(body, requestId);
     if (key === "projects") return createProject(body, requestId);
+    if (segments[0] === "projects" && segments[1] && segments[2] === "locations") return createProjectLocation(segments[1], body, requestId);
     if (key === "trials") return createTrial(body, requestId);
     if (key === "deliverables") return createDeliverable(body, requestId);
     if (key === "drafts") return createDraft(body, requestId);
@@ -58,6 +60,7 @@ export async function PATCH(request: NextRequest, context: Context) {
   const body = await request.json() as Record<string, unknown>;
   const requestId = request.headers.get("x-client-request-id") || undefined;
   return respond(() => {
+    if (segments[0] === "projects" && segments[1]) return updateProject(segments[1], body, requestId);
     if (segments[0] === "trials" && segments[1]) return updateTrial(segments[1], body, requestId);
     throw new BusinessError(404, "not_found", "接口不存在");
   });
