@@ -88,7 +88,7 @@ npm run dev
 
 打开 `http://127.0.0.1:3000` 后，MYOPC 作为行动、成果、反馈和下一步的面板使用；需求、资料或失败等具体输入与执行在 Codex 中完成，再由 Codex 写入这里。面板会定时刷新共享状态，也可以手动刷新；网络失败会保留当前页面并提供重连。`npm run s0:start` 与 `npm run s0:resume` 仅保留为历史接口验收脚本。
 
-已实现的最小 API 位于 `/api/v1`：`GET /health`、`GET /dashboard`、`GET /events?after=...`、`GET /projects`、`GET /projects/:id`、`GET /context?trial_id=...`、`POST /starts`、`POST /drafts`、`POST /captures`、`POST /methods`、`POST /trials`、`POST /projects`、`PATCH /projects/:id`、`POST /projects/:id/locations`、`POST /deliverables`、`POST /deliverables/:id/versions`、`POST /feedback`、`POST /decisions`、`POST /deliverables/:id/accept`。所有写入请求必须带 `X-Client-Request-Id`；可变尝试更新还必须带 `expected_revision`。
+已实现的最小 API 位于 `/api/v1`：`GET /health`、`GET /dashboard`、`GET /events?after=...`、`GET /projects`、`GET /projects/:id`、`GET /context?trial_id=...`、`POST /starts`、`POST /drafts`、`POST /captures`、`POST /methods`、`POST /trials`、`POST /projects`、`PATCH /projects/:id`、`POST /projects/:id/locations`、`POST /deliverables`、`POST /deliverables/:id/versions`、`POST /feedback`、`POST /decisions`、`POST /deliverables/:id/accept`。所有写入请求必须带 `X-Client-Request-Id`；可变尝试和项目更新还必须带 `expected_revision`；新成果版本必须带所基于的 `expected_previous_version_id`，服务会拒绝过期父版本。
 
 接续客户端支持任意实际内容，不绑定固定演示文案：
 
@@ -97,8 +97,10 @@ npm run continuity -- context --trial-id <id>
 npm run continuity -- start --title "行动标题" --goal "实际目标" --project-id <project-id> --code-commit <commit>
 npm run continuity -- draft --trial-id <id> --title "成果标题" --content-file .\draft.md
 npm run continuity -- feedback --version-id <version-id> --kind revision --content "具体修改意见" --request-id feedback-001
-npm run continuity -- revise --deliverable-id <deliverable-id> --feedback-id <feedback-id> --content-file .\v2.md
+npm run continuity -- revise --deliverable-id <deliverable-id> --previous-version-id <v1-id> --feedback-id <feedback-id> --content-file .\v2.md
 ```
+
+写入前客户端会先显示 request id；网络响应不确定时，用同一个 `--request-id` 或 `MYOPC_REQUEST_ID` 重试。网页中的失败写入也会保留同一编号和载荷，点击“重试上次写入”不会随机创建第二条记录。
 
 SQLite 使用 WAL，不能只复制运行中的 `myopc.sqlite`。一致性备份与隔离恢复命令：
 

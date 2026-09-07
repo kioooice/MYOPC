@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS trials (
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL,
   path TEXT, description TEXT, status TEXT NOT NULL DEFAULT 'active', profile_json TEXT,
+  revision INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS project_locations (
@@ -49,7 +50,8 @@ CREATE TABLE IF NOT EXISTS deliverable_versions (
   id TEXT PRIMARY KEY, deliverable_id TEXT NOT NULL REFERENCES deliverables(id),
   ordinal INTEGER NOT NULL, content TEXT NOT NULL,
   previous_version_id TEXT REFERENCES deliverable_versions(id),
-  handles_feedback_json TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL,
+  handles_feedback_json TEXT NOT NULL DEFAULT '[]',
+  review_status TEXT NOT NULL DEFAULT 'pending_review', created_at TEXT NOT NULL,
   UNIQUE(deliverable_id, ordinal)
 );
 CREATE TABLE IF NOT EXISTS feedback (
@@ -130,6 +132,11 @@ export function getDb() {
   addColumn("feedback", "kind", "TEXT NOT NULL DEFAULT 'revision'");
   addColumn("feedback", "handled_at", "TEXT");
   instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (6, ?)").run(new Date().toISOString());
+
+  addColumn("projects", "revision", "INTEGER NOT NULL DEFAULT 1");
+  addColumn("deliverable_versions", "review_status", "TEXT NOT NULL DEFAULT 'pending_review'");
+  instance.exec("UPDATE deliverable_versions SET review_status='accepted' WHERE id IN (SELECT accepted_version_id FROM deliverables WHERE accepted_version_id IS NOT NULL)");
+  instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (7, ?)").run(new Date().toISOString());
   return instance;
 }
 

@@ -5,8 +5,8 @@ import { getProjectProfile, parseProjectProfile, type ProjectProfile } from "./p
 
 type Json = Record<string, unknown>;
 type Stored = { status: number; body: Json };
-type HydratedVersion = Json & { id: string; ordinal: number; content: string; created_at: string; feedback: Json[] };
-type HydratedDeliverable = Json & { id: string; title: string; type: string; created_at: string; versions: HydratedVersion[] };
+type HydratedVersion = Json & { id: string; ordinal: number; content: string; created_at: string; review_status?: string; feedback: Json[] };
+type HydratedDeliverable = Json & { id: string; title: string; type: string; created_at: string; review_status: string; versions: HydratedVersion[] };
 type HydratedTrial = Json & { id: string; title: string; goal: string; status: string; updated_at: string; code_commit?: string | null; next_step?: string | null; deliverables: HydratedDeliverable[]; decisions: Array<Json & { next_step?: string }> };
 
 export class BusinessError extends Error {
@@ -112,6 +112,39 @@ function feedbackSource(value: unknown) {
   return source;
 }
 
+function reviewStatus(deliverable: Json, versions: HydratedVersion[]) {
+  const latest = versions[0];
+  if (!latest) return "pending_review";
+  const hasOpenRevision = latest.feedback.some((item) => item.status === "open" && item.kind === "revision");
+  if (hasOpenRevision) return "needs_revision";
+  if (String(deliverable.accepted_version_id || "") === latest.id) return "accepted";
+  return "pending_review";
+}
+
+function touchTrial(trialId: unknown) {
+  const id = text(trialId);
+  if (id) getDb().prepare("UPDATE trials SET updated_at=? WHERE id=?").run(now(), id);
+}
+
+function touchTrialByDeliverable(deliverableId: string) {
+  const trial = getDb().prepare("SELECT trial_id FROM deliverables WHERE id=?").get(deliverableId) as { trial_id?: string } | undefined;
+  touchTrial(trial?.trial_id);
+}
+
+function latestDeliverableEntry(trials: HydratedTrial[]) {
+  return trials
+    .flatMap((trial) => trial.deliverables.map((deliverable) => ({ trial, deliverable, latestVersion: deliverable.versions[0] || null })))
+    .sort((left, right) => {
+      const leftTime = left.latestVersion?.created_at || left.deliverable.created_at;
+      const rightTime = right.latestVersion?.created_at || right.deliverable.created_at;
+      return rightTime.localeCompare(leftTime) || String(right.deliverable.id).localeCompare(String(left.deliverable.id));
+    })[0] || null;
+}
+
+function currentNextStep(trial: HydratedTrial | null) {
+  return trial?.decisions?.[0]?.next_step || trial?.next_step || null;
+}
+
 function projectView(project: Json) {
   const { profile_json: _profileJson, ...rest } = project;
   return { ...rest, profile: getProjectProfile(project) };
@@ -124,8 +157,8 @@ export function createProject(payload: Json, requestId?: string) {
     if (!name) throw new BusinessError(400, "project_name_required", "项目名称不能为空");
     if (!PROJECT_CATEGORIES.some((item) => item.id === category)) throw new BusinessError(400, "project_category_invalid", "项目类别无效");
     const timestamp = now();
-    const row = { id: randomUUID(), name, category, path: optionalText(payload.path), description: optionalText(payload.description), status: text(payload.status) || "active", profile_json: profileJson(payload.profile, getProjectProfile({ name })), created_at: timestamp, updated_at: timestamp };
-    getDb().prepare("INSERT INTO projects(id,name,category,path,description,status,profile_json,created_at,updated_at) VALUES (@id,@name,@category,@path,@description,@status,@profile_json,@created_at,@updated_at)").run(row);
+    const row = { id: randomUUID(), name, category, path: optionalText(payload.path), description: optionalText(payload.description), status: text(payload.status) || "active", profile_json: profileJson(payload.profile, getProjectProfile({ name })), revision: 1, created_at: timestamp, updated_at: timestamp };
+    getDb().prepare("INSERT INTO projects(id,name,category,path,description,status,profile_json,revision,created_at,updated_at) VALUES (@id,@name,@category,@path,@description,@status,@profile_json,@revision,@created_at,@updated_at)").run(row);
     event("project", row.id, "project.created", row);
     return { status: 201, body: projectView(row) };
   });
@@ -135,6 +168,7 @@ export function updateProject(id: string, payload: Json, requestId?: string) {
   return idempotent(`PATCH /projects/${id}`, requestId, payload, () => {
     const current = getDb().prepare("SELECT * FROM projects WHERE id=?").get(id) as Json | undefined;
     if (!current) throw new BusinessError(404, "project_not_found", "项目不存在");
+    if (Number(payload.expected_revision) !== Number(current.revision)) throw new BusinessError(409, "revision_conflict", "项目已被更新，请重新读取", { current });
     const name = payload.name === undefined ? text(current.name) : text(payload.name);
     const category = (payload.category === undefined ? text(current.category) : text(payload.category)) as ProjectCategory;
     if (!name) throw new BusinessError(400, "project_name_required", "项目名称不能为空");
@@ -146,9 +180,10 @@ export function updateProject(id: string, payload: Json, requestId?: string) {
       description: payload.description === undefined ? current.description : optionalText(payload.description),
       status: payload.status === undefined ? current.status : text(payload.status) || current.status,
       profile_json: payload.profile === undefined ? current.profile_json : profileJson(payload.profile),
+      revision: Number(current.revision) + 1,
       updated_at: now(),
     };
-    getDb().prepare("UPDATE projects SET name=@name,category=@category,description=@description,status=@status,profile_json=@profile_json,updated_at=@updated_at WHERE id=@id").run(next);
+    getDb().prepare("UPDATE projects SET name=@name,category=@category,description=@description,status=@status,profile_json=@profile_json,revision=@revision,updated_at=@updated_at WHERE id=@id").run(next);
     event("project", id, "project.updated", next);
     return { status: 200, body: projectView(next) };
   });
@@ -209,6 +244,7 @@ export function createDeliverable(payload: Json, requestId?: string) {
     const row = { id: randomUUID(), trial_id: trialId, title: text(payload.title), type: text(payload.type) || "article", accepted_version_id: null, created_at: now() };
     if (!row.title) throw new BusinessError(400, "deliverable_fields_required", "成果名称不能为空");
     getDb().prepare("INSERT INTO deliverables VALUES (@id,@trial_id,@title,@type,@accepted_version_id,@created_at)").run(row);
+    touchTrial(trialId);
     event("deliverable", row.id, "deliverable.created", row);
     return { status: 201, body: row };
   });
@@ -226,7 +262,8 @@ export function createDraft(payload: Json, requestId?: string) {
     const deliverable = { id: randomUUID(), trial_id: trialId, title, type: payload.type || "article", accepted_version_id: null, created_at: timestamp };
     const version = { id: randomUUID(), deliverable_id: deliverable.id, ordinal: 1, content, previous_version_id: null, handles_feedback_json: "[]", created_at: timestamp };
     db.prepare("INSERT INTO deliverables VALUES (@id,@trial_id,@title,@type,@accepted_version_id,@created_at)").run(deliverable);
-    db.prepare("INSERT INTO deliverable_versions VALUES (@id,@deliverable_id,@ordinal,@content,@previous_version_id,@handles_feedback_json,@created_at)").run(version);
+    db.prepare("INSERT INTO deliverable_versions(id,deliverable_id,ordinal,content,previous_version_id,handles_feedback_json,review_status,created_at) VALUES (@id,@deliverable_id,@ordinal,@content,@previous_version_id,@handles_feedback_json,'pending_review',@created_at)").run(version);
+    touchTrial(trialId);
     event("deliverable", deliverable.id, "deliverable.created", deliverable);
     event("deliverable_version", version.id, "version.created", version);
     return { status: 201, body: { ...deliverable, version: { ...version, handles_feedback_ids: [] } } };
@@ -236,20 +273,26 @@ export function createDraft(payload: Json, requestId?: string) {
 export function createVersion(deliverableId: string, payload: Json, requestId?: string) {
   return idempotent(`POST /deliverables/${deliverableId}/versions`, requestId, payload, () => {
     const db = getDb();
-    const deliverable = db.prepare("SELECT id FROM deliverables WHERE id = ?").get(deliverableId);
+    const deliverable = db.prepare("SELECT id,trial_id FROM deliverables WHERE id = ?").get(deliverableId) as { id: string; trial_id: string } | undefined;
     if (!deliverable) throw new BusinessError(404, "deliverable_not_found", "成果不存在");
     const latest = db.prepare("SELECT * FROM deliverable_versions WHERE deliverable_id = ? ORDER BY ordinal DESC LIMIT 1").get(deliverableId) as Json | undefined;
+    const expectedPreviousVersionId = optionalText(payload.expected_previous_version_id ?? payload.previous_version_id);
+    if (latest && expectedPreviousVersionId !== String(latest.id)) {
+      throw new BusinessError(409, expectedPreviousVersionId ? "version_conflict" : "version_base_required", expectedPreviousVersionId ? "成果已从你读取的版本继续更新，请重新读取当前版本" : "创建新版本前必须提供你读取的 previous_version_id", { current_version_id: latest.id, current_ordinal: latest.ordinal });
+    }
+    if (!latest && expectedPreviousVersionId) throw new BusinessError(409, "version_conflict", "成果还没有可作为父版本的版本", { current_version_id: null });
     const feedbackIds = Array.isArray(payload.handles_feedback_ids) ? payload.handles_feedback_ids.map((id) => text(id)).filter(Boolean) : [];
     if (new Set(feedbackIds).size !== feedbackIds.length) throw new BusinessError(400, "feedback_duplicate", "同一条反馈不能重复处理");
-    const row = { id: randomUUID(), deliverable_id: deliverableId, ordinal: latest ? Number(latest.ordinal) + 1 : 1, content: text(payload.content), previous_version_id: latest?.id || null, handles_feedback_json: JSON.stringify(feedbackIds), created_at: now() };
+    const row = { id: randomUUID(), deliverable_id: deliverableId, ordinal: latest ? Number(latest.ordinal) + 1 : 1, content: text(payload.content), previous_version_id: latest?.id || null, handles_feedback_json: JSON.stringify(feedbackIds), review_status: "pending_review", created_at: now() };
     if (!row.content) throw new BusinessError(400, "version_content_required", "成果内容不能为空");
-    db.prepare("INSERT INTO deliverable_versions VALUES (@id,@deliverable_id,@ordinal,@content,@previous_version_id,@handles_feedback_json,@created_at)").run(row);
+    db.prepare("INSERT INTO deliverable_versions(id,deliverable_id,ordinal,content,previous_version_id,handles_feedback_json,review_status,created_at) VALUES (@id,@deliverable_id,@ordinal,@content,@previous_version_id,@handles_feedback_json,@review_status,@created_at)").run(row);
     for (const feedbackId of feedbackIds) {
       const feedback = db.prepare("SELECT f.id, f.status FROM feedback f JOIN deliverable_versions v ON v.id=f.version_id WHERE f.id=? AND v.deliverable_id=?").get(feedbackId, deliverableId) as { id: string; status: string } | undefined;
       if (!feedback) throw new BusinessError(400, "feedback_mismatch", "反馈不属于该成果");
       if (feedback.status !== "open") throw new BusinessError(409, "feedback_already_handled", "反馈已经处理，请重新读取当前状态");
       db.prepare("UPDATE feedback SET status='handled',handled_at=? WHERE id=?").run(now(), feedbackId);
     }
+    touchTrial(deliverable.trial_id);
     event("deliverable_version", row.id, "version.created", { ...row, handles_feedback_ids: feedbackIds });
     return { status: 201, body: { ...row, handles_feedback_ids: JSON.parse(row.handles_feedback_json), handles_feedback_json: undefined } };
   });
@@ -258,10 +301,13 @@ export function createVersion(deliverableId: string, payload: Json, requestId?: 
 export function createFeedback(payload: Json, requestId?: string) {
   return idempotent("POST /feedback", requestId, payload, () => {
     const versionId = text(payload.version_id);
-    if (!getDb().prepare("SELECT id FROM deliverable_versions WHERE id=?").get(versionId)) throw new BusinessError(404, "version_not_found", "成果版本不存在");
+    const version = getDb().prepare("SELECT v.id, d.trial_id FROM deliverable_versions v JOIN deliverables d ON d.id=v.deliverable_id WHERE v.id=?").get(versionId) as { id: string; trial_id: string } | undefined;
+    if (!version) throw new BusinessError(404, "version_not_found", "成果版本不存在");
     const row = { id: randomUUID(), version_id: versionId, content: text(payload.content), status: "open", source: feedbackSource(payload.source), kind: feedbackKind(payload.kind), handled_at: null, created_at: now() };
     if (!row.content) throw new BusinessError(400, "feedback_content_required", "反馈不能为空");
     getDb().prepare("INSERT INTO feedback(id,version_id,content,status,source,kind,handled_at,created_at) VALUES (@id,@version_id,@content,@status,@source,@kind,@handled_at,@created_at)").run(row);
+    if (row.kind === "revision") getDb().prepare("UPDATE deliverable_versions SET review_status='needs_revision' WHERE id=?").run(versionId);
+    touchTrial(version.trial_id);
     event("feedback", row.id, "feedback.created", row);
     return { status: 201, body: row };
   });
@@ -276,6 +322,7 @@ export function createDecision(payload: Json, requestId?: string) {
     const row = { id: randomUUID(), trial_id: trialId, basis_feedback_id: basisFeedbackId, rationale: text(payload.rationale), adjustment: text(payload.adjustment), next_step: text(payload.next_step), execution_status: text(payload.execution_status) || "proposed", created_at: now() };
     if (!row.rationale || !row.adjustment || !row.next_step) throw new BusinessError(400, "decision_fields_required", "判断依据、调整和下一步不能为空");
     getDb().prepare("INSERT INTO decisions VALUES (@id,@trial_id,@basis_feedback_id,@rationale,@adjustment,@next_step,@execution_status,@created_at)").run(row);
+    touchTrial(trialId);
     event("decision", row.id, "decision.created", row);
     return { status: 201, body: row };
   });
@@ -286,6 +333,8 @@ export function acceptVersion(deliverableId: string, payload: Json, requestId?: 
     const version = getDb().prepare("SELECT id FROM deliverable_versions WHERE id=? AND deliverable_id=?").get(payload.version_id, deliverableId);
     if (!version) throw new BusinessError(400, "version_mismatch", "版本不属于该成果");
     getDb().prepare("UPDATE deliverables SET accepted_version_id=? WHERE id=?").run(payload.version_id, deliverableId);
+    getDb().prepare("UPDATE deliverable_versions SET review_status='accepted' WHERE id=?").run(payload.version_id);
+    touchTrialByDeliverable(deliverableId);
     event("deliverable", deliverableId, "deliverable.accepted", { version_id: payload.version_id, actor: "user" });
     return { status: 200, body: { id: deliverableId, accepted_version_id: payload.version_id, publication_status: "not_published" } };
   });
@@ -297,13 +346,14 @@ function hydrateTrial(trial: Json): HydratedTrial {
   const captureId = trial.capture_id || method?.capture_id;
   const capture = captureId ? db.prepare("SELECT * FROM captures WHERE id=?").get(captureId) as Json : null;
   const project = trial.project_id ? db.prepare("SELECT id,name,category,status FROM projects WHERE id=?").get(trial.project_id) as Json : null;
+  const decisions = db.prepare("SELECT * FROM decisions WHERE trial_id=? ORDER BY created_at DESC").all(trial.id) as Array<Json & { next_step?: string }>;
   const deliverables = db.prepare("SELECT * FROM deliverables WHERE trial_id=? ORDER BY created_at").all(trial.id) as Json[];
   const nested = deliverables.map((deliverable) => {
     const versions = db.prepare("SELECT * FROM deliverable_versions WHERE deliverable_id=? ORDER BY ordinal DESC").all(deliverable.id) as Json[];
-    return { ...deliverable, versions: versions.map((version) => ({ ...version, handles_feedback_ids: JSON.parse(String(version.handles_feedback_json)), feedback: db.prepare("SELECT * FROM feedback WHERE version_id=? ORDER BY created_at").all(version.id) as Json[] })) } as unknown as HydratedDeliverable;
+    const hydratedVersions = versions.map((version) => ({ ...version, handles_feedback_ids: JSON.parse(String(version.handles_feedback_json)), feedback: db.prepare("SELECT * FROM feedback WHERE version_id=? ORDER BY created_at").all(version.id) as Json[] })) as unknown as HydratedVersion[];
+    return { ...deliverable, review_status: reviewStatus(deliverable, hydratedVersions), versions: hydratedVersions } as unknown as HydratedDeliverable;
   });
-  const decisions = db.prepare("SELECT * FROM decisions WHERE trial_id=? ORDER BY created_at DESC").all(trial.id) as Array<Json & { next_step?: string }>;
-  return { ...trial, project, method: method ? { ...method, steps: JSON.parse(String(method.steps_json)) } : null, capture, deliverables: nested, decisions } as unknown as HydratedTrial;
+  return { ...trial, next_step: decisions[0]?.next_step || trial.next_step || null, project, method: method ? { ...method, steps: JSON.parse(String(method.steps_json)) } : null, capture, deliverables: nested, decisions } as unknown as HydratedTrial;
 }
 
 export function getContext(trialId: string) {
@@ -324,15 +374,23 @@ function projectSummary(projectId: string) {
   const hydratedTrials = trials.map(hydrateTrial);
   const latestTrial = hydratedTrials[0] || null;
   const openFeedback = hydratedTrials.flatMap((trial) => trial.deliverables.flatMap((deliverable) => deliverable.versions.flatMap((version) => version.feedback.filter((item: Json) => item.status === "open").map((item: Json) => ({ ...item, trial_id: trial.id, trial_title: trial.title, version_id: version.id, version_ordinal: version.ordinal })))));
-  const latestDeliverable = latestTrial?.deliverables?.[0] || null;
-  const latestVersion = latestDeliverable?.versions?.[0] || null;
+  const pendingReviews = hydratedTrials.flatMap((trial) => trial.deliverables.flatMap((deliverable) => {
+    const latestVersion = deliverable.versions[0];
+    const hasOpenReview = latestVersion?.feedback.some((item: Json) => item.status === "open" && item.kind === "review");
+    return deliverable.review_status === "pending_review" && latestVersion && !hasOpenReview ? [{ id: latestVersion.id, trial_id: trial.id, trial_title: trial.title, deliverable_id: deliverable.id, deliverable_title: deliverable.title, version_ordinal: latestVersion.ordinal, content: latestVersion.content }] : [];
+  }));
+  const latestEntry = latestDeliverableEntry(hydratedTrials);
+  const latestDeliverable = latestEntry?.deliverable || null;
+  const latestVersion = latestEntry?.latestVersion || null;
   return {
     trial_count: trials.length,
     open_feedback_count: openFeedback.length,
     open_feedback: openFeedback.slice(0, 8),
+    pending_review_count: pendingReviews.length,
+    pending_reviews: pendingReviews.slice(0, 8),
     latest_trial: latestTrial ? { id: latestTrial.id, title: latestTrial.title, goal: latestTrial.goal, status: latestTrial.status, updated_at: latestTrial.updated_at, code_commit: latestTrial.code_commit || null } : null,
-    latest_deliverable: latestDeliverable ? { id: latestDeliverable.id, title: latestDeliverable.title, type: latestDeliverable.type, version: latestVersion ? latestVersion.ordinal : null, content: latestVersion?.content || null, updated_at: latestVersion?.created_at || latestDeliverable.created_at } : null,
-    next_step: latestTrial?.next_step || latestTrial?.decisions?.[0]?.next_step || null,
+    latest_deliverable: latestDeliverable ? { id: latestDeliverable.id, trial_id: latestEntry?.trial.id, trial_title: latestEntry?.trial.title, title: latestDeliverable.title, type: latestDeliverable.type, version: latestVersion ? latestVersion.ordinal : null, content: latestVersion?.content || null, review_status: latestDeliverable.review_status, updated_at: latestVersion?.created_at || latestDeliverable.created_at } : null,
+    next_step: currentNextStep(latestTrial),
   };
 }
 
@@ -349,16 +407,24 @@ export function getProject(projectId: string) {
   const trials = getDb().prepare("SELECT * FROM trials WHERE project_id=? ORDER BY updated_at DESC").all(projectId).map((trial) => hydrateTrial(trial as Json));
   const openFeedback = trials.flatMap((trial) => trial.deliverables.flatMap((deliverable) => deliverable.versions.flatMap((version) => version.feedback.filter((item: Json) => item.status === "open"))));
   const latestTrial = trials[0] || null;
-  const latestDeliverable = latestTrial?.deliverables?.[0] || null;
-  const latestVersion = latestDeliverable?.versions?.[0] || null;
+  const pendingReviews = trials.flatMap((trial) => trial.deliverables.flatMap((deliverable) => {
+    const latestVersion = deliverable.versions[0];
+    const hasOpenReview = latestVersion?.feedback.some((item: Json) => item.status === "open" && item.kind === "review");
+    return deliverable.review_status === "pending_review" && latestVersion && !hasOpenReview ? [{ id: latestVersion.id, trial_id: trial.id, trial_title: trial.title, deliverable_id: deliverable.id, deliverable_title: deliverable.title, version_ordinal: latestVersion.ordinal, content: latestVersion.content }] : [];
+  }));
+  const latestEntry = latestDeliverableEntry(trials);
+  const latestDeliverable = latestEntry?.deliverable || null;
+  const latestVersion = latestEntry?.latestVersion || null;
   return {
     ...projectView(project),
     locations,
     trials,
     open_feedback: openFeedback,
+    pending_review_count: pendingReviews.length,
+    pending_reviews: pendingReviews,
     latest_trial: latestTrial,
-    latest_deliverable: latestDeliverable ? { ...latestDeliverable, latest_version: latestVersion } : null,
-    next_step: latestTrial?.next_step || latestTrial?.decisions?.[0]?.next_step || null,
+    latest_deliverable: latestDeliverable ? { ...latestDeliverable, trial_id: latestEntry?.trial.id, trial_title: latestEntry?.trial.title, latest_version: latestVersion } : null,
+    next_step: currentNextStep(latestTrial),
   };
 }
 

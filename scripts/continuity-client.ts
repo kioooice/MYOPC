@@ -34,13 +34,20 @@ function contentOption() {
 
 async function request(path: string, method = "GET", body?: Json, id?: string) {
   const headers: Record<string, string> = { ...authHeaders };
+  const writeRequestId = body ? (id || requestId(method.toLowerCase())) : undefined;
   if (body) {
     headers["content-type"] = "application/json";
-    headers["x-client-request-id"] = id || requestId(method.toLowerCase());
+    headers["x-client-request-id"] = writeRequestId!;
+    console.error(`MYOPC 写入请求编号：${writeRequestId}（若响应未返回，使用同一编号重试）`);
   }
-  const response = await fetch(`${base}/api/v1${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  let response: Response;
+  try {
+    response = await fetch(`${base}/api/v1${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  } catch (cause) {
+    throw new Error(`请求未确认，请使用 request_id=${writeRequestId || "未生成"} 重试：${cause instanceof Error ? cause.message : String(cause)}`);
+  }
   const data = await response.json() as Json;
-  if (!response.ok) throw new Error(`${response.status} ${JSON.stringify(data)}`);
+  if (!response.ok) throw new Error(`${response.status} ${JSON.stringify(data)}；如需重试使用 request_id=${writeRequestId || "未生成"}`);
   return data;
 }
 
@@ -81,7 +88,7 @@ async function main() {
   }
   if (command === "revise") {
     const id = requestId("revise");
-    const result = await request(`/deliverables/${required("--deliverable-id")}/versions`, "POST", { content: contentOption(), handles_feedback_ids: options("--feedback-id") }, id);
+    const result = await request(`/deliverables/${required("--deliverable-id")}/versions`, "POST", { content: contentOption(), expected_previous_version_id: required("--previous-version-id"), handles_feedback_ids: options("--feedback-id") }, id);
     console.log(JSON.stringify({ operation: "revise", request_id: id, ...result }, null, 2));
     return;
   }
@@ -91,7 +98,7 @@ async function main() {
     console.log(JSON.stringify({ operation: "decision", request_id: id, ...result }, null, 2));
     return;
   }
-  throw new Error("用法：context|start|draft|feedback|revise|decision；写入操作支持 --request-id 以安全重试，内容支持 --content 或 --content-file");
+  throw new Error("用法：context|start|draft|feedback|revise|decision；revise 需要 --previous-version-id；写入操作支持 --request-id 以安全重试，内容支持 --content 或 --content-file");
 }
 
 main().catch((error) => {
