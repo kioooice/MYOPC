@@ -2,6 +2,8 @@
 
 日期：2026-09-07。环境：Windows、Node.js 24.14.0、Codex Desktop 本地任务、Next.js 16.3.4、SQLite。运行数据位于仓库外的私有目录，本文只记录明确标记的测试样例。
 
+阶段结论：S0 已在 Codex Desktop 本地模式通过。起始提交 `f7897b1`，实现提交 `3cd6b19`；状态校正提交见本文件后续历史。
+
 ## 实际往返
 
 1. 在 Codex Desktop 当前任务的本地 shell 启动服务并运行 `npm run s0:start`，通过 localhost HTTP 创建文本输入、方法 r1、无项目独立尝试、图文成果和 v1。
