@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BusinessError, createCapture, createTrial, updateTrial } from "../lib/business";
+import { BusinessError, createCapture, createDraft, createTrial, getContext, startTrial, updateTrial } from "../lib/business";
 import { closeDbForTests } from "../lib/db";
 
 let directory: string;
@@ -26,5 +26,19 @@ describe("S0 business invariants", () => {
     const trial = createTrial({ title: "trial", goal: "goal" }, "trial-key").body;
     updateTrial(String(trial.id), { expected_revision: 1, status: "review" }, "update-key");
     expect(() => updateTrial(String(trial.id), { expected_revision: 1, status: "done" }, "stale-key")).toThrowError(/重新读取/);
+  });
+
+  it("starts directly from a need and keeps the original input linked", () => {
+    const result = startTrial({ kind: "need", title: "写一篇产品说明", content: "让读者理解产品解决什么问题" }, "start-key");
+    const context = getContext(String(result.body.id));
+    expect(context.capture).toMatchObject({ kind: "need", title: "写一篇产品说明" });
+    expect(context.method).toBeNull();
+  });
+
+  it("adds the first reviewable deliverable from the workspace", () => {
+    const trial = startTrial({ kind: "need", title: "行动", content: "目标" }, "start-key").body;
+    createDraft({ trial_id: trial.id, title: "第一版", content: "# 可审阅内容" }, "draft-key");
+    const context = getContext(String(trial.id));
+    expect((context.deliverables as Array<{ versions: unknown[] }>)[0].versions).toHaveLength(1);
   });
 });

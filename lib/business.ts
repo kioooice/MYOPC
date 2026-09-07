@@ -66,11 +66,30 @@ export function createMethod(payload: Json, requestId?: string) {
 export function createTrial(payload: Json, requestId?: string) {
   return idempotent("POST /trials", requestId, payload, () => {
     const timestamp = now();
-    const row = { id: randomUUID(), title: payload.title, goal: payload.goal, method_id: payload.method_id || null, status: payload.status || "in_progress", environment: payload.environment || null, actual_result: null, revision: 1, created_at: timestamp, updated_at: timestamp };
+    const row = { id: randomUUID(), title: payload.title, goal: payload.goal, method_id: payload.method_id || null, capture_id: payload.capture_id || null, status: payload.status || "in_progress", environment: payload.environment || null, actual_result: null, revision: 1, created_at: timestamp, updated_at: timestamp };
     if (!row.title || !row.goal) throw new BusinessError(400, "trial_fields_required", "尝试标题和目标不能为空");
-    getDb().prepare("INSERT INTO trials VALUES (@id,@title,@goal,@method_id,@status,@environment,@actual_result,@revision,@created_at,@updated_at)").run(row);
+    getDb().prepare("INSERT INTO trials(id,title,goal,method_id,capture_id,status,environment,actual_result,revision,created_at,updated_at) VALUES (@id,@title,@goal,@method_id,@capture_id,@status,@environment,@actual_result,@revision,@created_at,@updated_at)").run(row);
     event("trial", row.id, "trial.created", row);
     return { status: 201, body: row };
+  });
+}
+
+export function startTrial(payload: Json, requestId?: string) {
+  return idempotent("POST /starts", requestId, payload, () => {
+    const title = String(payload.title || "").trim();
+    const content = String(payload.content || "").trim();
+    const kind = String(payload.kind || "need");
+    if (!title || !content) throw new BusinessError(400, "start_fields_required", "标题和具体内容不能为空");
+    if (!["need", "discovery", "failure"].includes(kind)) throw new BusinessError(400, "start_kind_invalid", "入口类型无效");
+    const db = getDb();
+    const timestamp = now();
+    const capture = { id: randomUUID(), kind, title, content, source: null, read_status: "provided", created_at: timestamp };
+    const trial = { id: randomUUID(), title, goal: content, method_id: null, capture_id: capture.id, status: "in_progress", environment: "web", actual_result: null, revision: 1, created_at: timestamp, updated_at: timestamp };
+    db.prepare("INSERT INTO captures VALUES (@id,@kind,@title,@content,@source,@read_status,@created_at)").run(capture);
+    db.prepare("INSERT INTO trials(id,title,goal,method_id,capture_id,status,environment,actual_result,revision,created_at,updated_at) VALUES (@id,@title,@goal,@method_id,@capture_id,@status,@environment,@actual_result,@revision,@created_at,@updated_at)").run(trial);
+    event("capture", capture.id, "capture.created", capture);
+    event("trial", trial.id, "trial.created", trial);
+    return { status: 201, body: { ...trial, capture } };
   });
 }
 
@@ -92,6 +111,25 @@ export function createDeliverable(payload: Json, requestId?: string) {
     getDb().prepare("INSERT INTO deliverables VALUES (@id,@trial_id,@title,@type,@accepted_version_id,@created_at)").run(row);
     event("deliverable", row.id, "deliverable.created", row);
     return { status: 201, body: row };
+  });
+}
+
+export function createDraft(payload: Json, requestId?: string) {
+  return idempotent("POST /drafts", requestId, payload, () => {
+    const db = getDb();
+    const trialId = String(payload.trial_id || "");
+    const title = String(payload.title || "").trim();
+    const content = String(payload.content || "").trim();
+    if (!db.prepare("SELECT id FROM trials WHERE id=?").get(trialId)) throw new BusinessError(404, "trial_not_found", "行动不存在");
+    if (!title || !content) throw new BusinessError(400, "draft_fields_required", "成果标题和内容不能为空");
+    const timestamp = now();
+    const deliverable = { id: randomUUID(), trial_id: trialId, title, type: payload.type || "article", accepted_version_id: null, created_at: timestamp };
+    const version = { id: randomUUID(), deliverable_id: deliverable.id, ordinal: 1, content, previous_version_id: null, handles_feedback_json: "[]", created_at: timestamp };
+    db.prepare("INSERT INTO deliverables VALUES (@id,@trial_id,@title,@type,@accepted_version_id,@created_at)").run(deliverable);
+    db.prepare("INSERT INTO deliverable_versions VALUES (@id,@deliverable_id,@ordinal,@content,@previous_version_id,@handles_feedback_json,@created_at)").run(version);
+    event("deliverable", deliverable.id, "deliverable.created", deliverable);
+    event("deliverable_version", version.id, "version.created", version);
+    return { status: 201, body: { ...deliverable, version: { ...version, handles_feedback_ids: [] } } };
   });
 }
 
@@ -146,7 +184,8 @@ export function acceptVersion(deliverableId: string, payload: Json, requestId?: 
 function hydrateTrial(trial: Json) {
   const db = getDb();
   const method = trial.method_id ? db.prepare("SELECT * FROM methods WHERE id=?").get(trial.method_id) as Json : null;
-  const capture = method?.capture_id ? db.prepare("SELECT * FROM captures WHERE id=?").get(method.capture_id) as Json : null;
+  const captureId = trial.capture_id || method?.capture_id;
+  const capture = captureId ? db.prepare("SELECT * FROM captures WHERE id=?").get(captureId) as Json : null;
   const deliverables = db.prepare("SELECT * FROM deliverables WHERE trial_id=? ORDER BY created_at").all(trial.id) as Json[];
   const nested = deliverables.map((deliverable) => {
     const versions = db.prepare("SELECT * FROM deliverable_versions WHERE deliverable_id=? ORDER BY ordinal DESC").all(deliverable.id) as Json[];

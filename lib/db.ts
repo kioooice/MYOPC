@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS methods (
 );
 CREATE TABLE IF NOT EXISTS trials (
   id TEXT PRIMARY KEY, title TEXT NOT NULL, goal TEXT NOT NULL,
-  method_id TEXT REFERENCES methods(id), status TEXT NOT NULL,
+  method_id TEXT REFERENCES methods(id), capture_id TEXT REFERENCES captures(id), status TEXT NOT NULL,
   environment TEXT, actual_result TEXT, revision INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
@@ -77,6 +77,12 @@ export function getDb() {
   instance.pragma("foreign_keys = ON");
   instance.exec(schema);
   instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, ?)").run(new Date().toISOString());
+  const trialColumns = instance.pragma("table_info(trials)") as Array<{ name: string }>;
+  if (!trialColumns.some((column) => column.name === "capture_id")) {
+    instance.exec("ALTER TABLE trials ADD COLUMN capture_id TEXT REFERENCES captures(id)");
+    instance.exec("UPDATE trials SET capture_id=(SELECT capture_id FROM methods WHERE methods.id=trials.method_id) WHERE method_id IS NOT NULL");
+  }
+  instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (2, ?)").run(new Date().toISOString());
   return instance;
 }
 
@@ -84,4 +90,3 @@ export function closeDbForTests() {
   instance?.close();
   instance = undefined;
 }
-

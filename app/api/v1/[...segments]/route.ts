@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { acceptVersion, BusinessError, createCapture, createDecision, createDeliverable, createFeedback, createMethod, createTrial, createVersion, getContext, getDashboard, getEvents, updateTrial } from "@/lib/business";
+import { acceptVersion, BusinessError, createCapture, createDecision, createDeliverable, createDraft, createFeedback, createMethod, createTrial, createVersion, getContext, getDashboard, getEvents, startTrial, updateTrial } from "@/lib/business";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,9 +38,11 @@ export async function POST(request: NextRequest, context: Context) {
   const key = segments.join("/");
   return respond(() => {
     if (key === "captures") return createCapture(body, requestId);
+    if (key === "starts") return startTrial(body, requestId);
     if (key === "methods") return createMethod(body, requestId);
     if (key === "trials") return createTrial(body, requestId);
     if (key === "deliverables") return createDeliverable(body, requestId);
+    if (key === "drafts") return createDraft(body, requestId);
     if (key === "feedback") return createFeedback(body, requestId);
     if (key === "decisions") return createDecision(body, requestId);
     if (segments[0] === "deliverables" && segments[2] === "versions") return createVersion(segments[1], body, requestId);
@@ -58,4 +60,3 @@ export async function PATCH(request: NextRequest, context: Context) {
     throw new BusinessError(404, "not_found", "接口不存在");
   });
 }
-

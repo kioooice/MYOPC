@@ -80,9 +80,9 @@ $env:MYOPC_DATA_DIR="C:\path\to\private\myopc-data"
 npm run dev
 ```
 
-打开 `http://127.0.0.1:3000`。运行 `npm run s0:start` 会通过 HTTP 写入一套明确标记的本地测试样例；命令输出的 `trial_id` 可用于在工作台给 v1 留反馈，再运行 `npm run s0:resume -- <trial_id>` 完成 v1 → 反馈 → v2 → 拟议决策。该脚本证明的是客户端到本地服务的 HTTP 往返，不等于当前 Codex Work 对话直连。
+打开 `http://127.0.0.1:3000` 后，可以直接从左侧“新建行动”或主区输入框，以需求、资料或失败开始，不需要运行命令。`npm run s0:start` 与 `npm run s0:resume` 仅保留为开发联动验收脚本，不是用户使用入口。
 
-已实现的最小 API 位于 `/api/v1`：`GET /health`、`GET /dashboard`、`GET /context?trial_id=...`、`POST /captures`、`POST /methods`、`POST /trials`、`POST /deliverables`、`POST /deliverables/:id/versions`、`POST /feedback`、`POST /decisions`、`POST /deliverables/:id/accept`。所有写入请求必须带 `X-Client-Request-Id`；可变尝试更新还必须带 `expected_revision`。
+已实现的最小 API 位于 `/api/v1`：`GET /health`、`GET /dashboard`、`GET /context?trial_id=...`、`POST /starts`、`POST /drafts`、`POST /captures`、`POST /methods`、`POST /trials`、`POST /deliverables`、`POST /deliverables/:id/versions`、`POST /feedback`、`POST /decisions`、`POST /deliverables/:id/accept`。所有写入请求必须带 `X-Client-Request-Id`；可变尝试更新还必须带 `expected_revision`。
 
 备份时同时复制 `MYOPC_DATA_DIR` 中的 `myopc.sqlite` 及其文件目录；当前 S0 尚未加入正式备份恢复命令。
 
