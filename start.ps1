@@ -1,9 +1,10 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$DataDir = $env:MYOPC_DATA_DIR,
     [ValidateRange(1, 65535)]
     [int]$Port = 3000,
     [switch]$Production,
+    [switch]$OpenBrowser,
     [switch]$Check
 )
 
@@ -49,6 +50,24 @@ if ($Check) {
     exit 0
 }
 
+if ($OpenBrowser) {
+    $myopcUrl = "http://127.0.0.1:$Port"
+    Start-Job -ScriptBlock {
+        param($Url)
+        for ($myopcAttempt = 0; $myopcAttempt -lt 120; $myopcAttempt++) {
+            try {
+                $myopcResponse = Invoke-WebRequest -Uri "$Url/api/v1/health" -UseBasicParsing -TimeoutSec 1
+                if ($myopcResponse.StatusCode -eq 200) {
+                    Start-Process $Url
+                    return
+                }
+            } catch {
+                Start-Sleep -Milliseconds 500
+            }
+        }
+    } -ArgumentList $myopcUrl | Out-Null
+}
+
 if ($Production) {
     Write-Host "正在构建生产版本..." -ForegroundColor Cyan
     npm run build
@@ -59,4 +78,3 @@ if ($Production) {
 }
 
 if ($LASTEXITCODE -ne 0) { throw "MYOPC 服务异常退出，代码：$LASTEXITCODE" }
-

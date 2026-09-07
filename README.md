@@ -62,7 +62,9 @@ MYOPC 承载一个持续循环：发现需求或可能性 → 结合个人知识
 
 Node.js 24+、npm 11+。
 
-Windows 推荐直接使用启动脚本：
+Windows 直接双击根目录的 `start.bat`，它会自动安装首次运行所需依赖、启动服务，并在就绪后打开浏览器，不需要输入命令。
+
+需要自定义时也可以使用 PowerShell 启动脚本：
 
 ```powershell
 .\start.ps1
