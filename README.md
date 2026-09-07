@@ -62,6 +62,16 @@ MYOPC 承载一个持续循环：发现需求或可能性 → 结合个人知识
 
 Node.js 24+、npm 11+。
 
+Windows 推荐直接使用启动脚本：
+
+```powershell
+.\start.ps1
+```
+
+默认数据保存在 `%LOCALAPPDATA%\MYOPC\data`，服务地址为 `http://127.0.0.1:3000`。可用 `-DataDir D:\private\myopc -Port 3100` 自定义；`-Production` 会先构建再启动生产服务，`-Check` 只检查环境而不启动。
+
+也可以手动启动：
+
 ```powershell
 npm install
 $env:MYOPC_DATA_DIR="C:\path\to\private\myopc-data"
