@@ -1,0 +1,43 @@
+{
+  "name": "myopc",
+  "version": "1.0.0",
+  "description": "个人能力应用与 OPC（One-Person Company，一人公司）经营工作台。",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "s0:start": "tsx scripts/s0-client.ts start",
+    "s0:resume": "tsx scripts/s0-client.ts resume"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kioooice/MYOPC.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/kioooice/MYOPC/issues"
+  },
+  "homepage": "https://github.com/kioooice/MYOPC#readme",
+  "dependencies": {
+    "better-sqlite3": "13.0.3",
+    "next": "16.3.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "26.4.1",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "16.3.4",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
+}

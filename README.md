@@ -4,7 +4,7 @@
 
 MYOPC 承载一个持续循环：发现需求或可能性 → 结合个人知识、能力与资源 → 形成尝试并行动 → 获得成果和外部反馈 → 更新方法与判断 → 影响下一次选择和行动。入口不固定，可以从一篇帖子、一个需求、已有能力或一次失败开始。副业经营是当前最明确的应用主线，个人能力和信息积累让下一轮拥有不同的起点。Codex 负责主要的规划、执行与分析，MYOPC 提供持续可用的业务界面与记录。
 
-**当前状态：规划基线已建立，尚无应用代码，尚未验证 Codex 联动。**
+**当前状态：S0 最小应用已可在本机运行；普通 HTTP 联动已验证，当前 Codex 对话直连仍未验证。**
 
 ## 打开以后应该能做什么
 
@@ -60,6 +60,18 @@ MYOPC 承载一个持续循环：发现需求或可能性 → 结合个人知识
 
 ## 运行与数据
 
-应用尚未实现，因此本仓库不提供虚假的启动命令。首个可运行版本交付时须补齐安装、启动、备份及接入说明。
+Node.js 24+、npm 11+。
+
+```powershell
+npm install
+$env:MYOPC_DATA_DIR="C:\path\to\private\myopc-data"
+npm run dev
+```
+
+打开 `http://127.0.0.1:3000`。运行 `npm run s0:start` 会通过 HTTP 写入一套明确标记的本地测试样例；命令输出的 `trial_id` 可用于在工作台给 v1 留反馈，再运行 `npm run s0:resume -- <trial_id>` 完成 v1 → 反馈 → v2 → 拟议决策。该脚本证明的是客户端到本地服务的 HTTP 往返，不等于当前 Codex Work 对话直连。
+
+已实现的最小 API 位于 `/api/v1`：`GET /health`、`GET /dashboard`、`GET /context?trial_id=...`、`POST /captures`、`POST /methods`、`POST /trials`、`POST /deliverables`、`POST /deliverables/:id/versions`、`POST /feedback`、`POST /decisions`、`POST /deliverables/:id/accept`。所有写入请求必须带 `X-Client-Request-Id`；可变尝试更新还必须带 `expected_revision`。
+
+备份时同时复制 `MYOPC_DATA_DIR` 中的 `myopc.sqlite` 及其文件目录；当前 S0 尚未加入正式备份恢复命令。
 
 本仓库为公开代码仓库。真实稿件、未发布素材、收入明细、账号凭据及运行数据库放在私有运行存储中，不能随代码提交。
