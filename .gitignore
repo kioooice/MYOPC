@@ -8,4 +8,5 @@ coverage/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+.release-commit
 
