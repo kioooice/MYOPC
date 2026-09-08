@@ -8,6 +8,15 @@
 
 服务器当前使用 Node + systemd + SQLite + Tailscale；本轮部署方法已在 `opc-cloud` 实际跑通。Docker Hub 不稳定是当前环境事实，不代表 Docker 部署方法已经验证。
 
+本轮正式发布实测：GitHub `main` 的 `6392ec66962f438e7d83f3248f2f3e9af7ba3c25` 已由服务器 Deploy Key 独立 fetch；`deploy-opc` 创建并校验 `/opt/backups/opc/myopc-20260908T114140Z-6392ec66962f438e7d83f3248f2f3e9af7ba3c25.sqlite`，18 项测试、lint、build、systemd restart、health/release 和 `/api/v1/library` 均通过。首次 fresh clone 缺少 `tsx` 的脚本缺口已修复并重新验证；不影响业务数据。
+
+能力库已记录两份真实素材与方法版本 r1：
+
+- `opc-cloud 私人云工作节点实测`：素材 `13849be0-8b46-42e7-97d8-fcc137660ef5`；方法 `私人云工作节点初始化`，方法 ID `3ede3c89-3696-4ad4-a1b2-88636aac9c15`。
+- `MYOPC opc-cloud 迁移与发布实测`：素材 `68234d2c-6bb6-419f-9d5b-b3f5cd287e28`；方法 `GitHub → 私人云服务安全部署`，方法 ID `a133ab4f-2c59-404e-b1cc-897d18f60354`。
+
+生产页面已通过 Tailscale 浏览器打开，工作台能力计数显示为 4；这些记录没有写入公网地址、私钥或凭证。
+
 ## 本轮收口结论
 
 独立验收记录在 `d1614ac` 发现的 R1–R5 已完成最小修复，修复提交为 `d02291b`（`fix: close continuity acceptance gaps`），已推送到 `origin/main` 并部署到服务器。原阶段的技术收口完成；第二台真实电脑、真实用户反馈和 S1/S2 仍是现场边界，不因技术样例提前关闭。
