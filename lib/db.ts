@@ -14,12 +14,15 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 CREATE TABLE IF NOT EXISTS captures (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL,
   content TEXT, source TEXT, read_status TEXT NOT NULL,
+  file_name TEXT, mime_type TEXT, file_size INTEGER, file_path TEXT,
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS methods (
   id TEXT PRIMARY KEY, capture_id TEXT REFERENCES captures(id),
   title TEXT NOT NULL, purpose TEXT NOT NULL, revision_label TEXT NOT NULL,
-  steps_json TEXT NOT NULL, conditions TEXT, created_at TEXT NOT NULL
+  steps_json TEXT NOT NULL, conditions TEXT, family_id TEXT,
+  previous_method_id TEXT REFERENCES methods(id), revision_number INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS trials (
   id TEXT PRIMARY KEY, title TEXT NOT NULL, goal TEXT NOT NULL,
@@ -67,6 +70,13 @@ CREATE TABLE IF NOT EXISTS decisions (
   adjustment TEXT NOT NULL, next_step TEXT NOT NULL,
   execution_status TEXT NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS trial_captures (
+  trial_id TEXT NOT NULL REFERENCES trials(id) ON DELETE CASCADE,
+  capture_id TEXT NOT NULL REFERENCES captures(id),
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (trial_id, capture_id)
+);
 CREATE TABLE IF NOT EXISTS events (
   sequence INTEGER PRIMARY KEY AUTOINCREMENT, entity_type TEXT NOT NULL,
   entity_id TEXT NOT NULL, kind TEXT NOT NULL, payload_json TEXT NOT NULL,
@@ -81,6 +91,7 @@ CREATE INDEX IF NOT EXISTS idx_versions_deliverable ON deliverable_versions(deli
 CREATE INDEX IF NOT EXISTS idx_feedback_version ON feedback(version_id, status);
 CREATE INDEX IF NOT EXISTS idx_project_locations_project ON project_locations(project_id, updated_at);
 CREATE INDEX IF NOT EXISTS idx_events_sequence ON events(sequence);
+CREATE INDEX IF NOT EXISTS idx_trial_captures_capture ON trial_captures(capture_id, trial_id);
 `;
 
 export function getDataDirectory() {
@@ -137,6 +148,19 @@ export function getDb() {
   addColumn("deliverable_versions", "review_status", "TEXT NOT NULL DEFAULT 'pending_review'");
   instance.exec("UPDATE deliverable_versions SET review_status='accepted' WHERE id IN (SELECT accepted_version_id FROM deliverables WHERE accepted_version_id IS NOT NULL)");
   instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (7, ?)").run(new Date().toISOString());
+
+  addColumn("captures", "file_name", "TEXT");
+  addColumn("captures", "mime_type", "TEXT");
+  addColumn("captures", "file_size", "INTEGER");
+  addColumn("captures", "file_path", "TEXT");
+  addColumn("methods", "family_id", "TEXT");
+  addColumn("methods", "previous_method_id", "TEXT REFERENCES methods(id)");
+  addColumn("methods", "revision_number", "INTEGER NOT NULL DEFAULT 1");
+  instance.exec("UPDATE methods SET family_id=id WHERE family_id IS NULL OR family_id=''");
+  instance.exec("CREATE TABLE IF NOT EXISTS trial_captures (trial_id TEXT NOT NULL REFERENCES trials(id) ON DELETE CASCADE, capture_id TEXT NOT NULL REFERENCES captures(id), position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, PRIMARY KEY (trial_id, capture_id))");
+  instance.exec("CREATE INDEX IF NOT EXISTS idx_trial_captures_capture ON trial_captures(capture_id, trial_id)");
+  instance.exec("INSERT OR IGNORE INTO trial_captures(trial_id, capture_id, position, created_at) SELECT id, capture_id, 0, created_at FROM trials WHERE capture_id IS NOT NULL");
+  instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (8, ?)").run(new Date().toISOString());
   return instance;
 }
 

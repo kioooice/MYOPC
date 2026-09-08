@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
-import { existsSync, mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { getDataDirectory, getDb } from "./db";
 
 export type DatabaseCheck = {
@@ -37,7 +37,10 @@ export async function backupDatabase(outputPath: string) {
   await source.backup(destination);
   const check = verifyDatabase(destination);
   if (!check.ok) throw new Error(`备份校验失败：${JSON.stringify(check)}`);
-  return check;
+  const sourceAssets = resolve(getDataDirectory(), "assets");
+  const assetBackup = `${destination}.assets`;
+  if (existsSync(sourceAssets)) cpSync(sourceAssets, assetBackup, { recursive: true, errorOnExist: true });
+  return { ...check, assets: existsSync(assetBackup) ? countFiles(assetBackup) : 0, asset_directory: existsSync(assetBackup) ? assetBackup : null };
 }
 
 export async function restoreDatabase(inputPath: string, outputDirectory: string) {
@@ -56,7 +59,17 @@ export async function restoreDatabase(inputPath: string, outputDirectory: string
   }
   const restored = verifyDatabase(destination);
   if (!restored.ok) throw new Error(`恢复后校验失败：${JSON.stringify(restored)}`);
-  return { source: sourceCheck, restored };
+  const sourceAssets = `${sourcePath}.assets`;
+  const destinationAssets = resolve(destinationDirectory, "assets");
+  if (existsSync(sourceAssets)) {
+    if (existsSync(destinationAssets)) throw new Error(`恢复目录已有素材目录：${destinationAssets}`);
+    cpSync(sourceAssets, destinationAssets, { recursive: true, errorOnExist: true });
+  }
+  return { source: sourceCheck, restored, assets: existsSync(destinationAssets) ? countFiles(destinationAssets) : 0 };
+}
+
+function countFiles(directory: string): number {
+  return readdirSync(directory, { withFileTypes: true }).reduce((count, entry) => count + (entry.isDirectory() ? countFiles(join(directory, entry.name)) : 1), 0);
 }
 
 export function defaultBackupPath() {

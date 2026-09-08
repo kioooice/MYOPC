@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { getDb } from "./db";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
+import { getDataDirectory, getDb } from "./db";
 import { PROJECT_CATEGORIES, type ProjectCategory } from "./project-categories";
 import { getProjectProfile, parseProjectProfile, type ProjectProfile } from "./project-profiles";
 
@@ -8,6 +10,8 @@ type Stored = { status: number; body: Json };
 type HydratedVersion = Json & { id: string; ordinal: number; content: string; created_at: string; write_sequence: number; review_status?: string; feedback: Json[] };
 type HydratedDeliverable = Json & { id: string; title: string; type: string; created_at: string; write_sequence: number; review_status: string; versions: HydratedVersion[] };
 type HydratedTrial = Json & { id: string; title: string; goal: string; status: string; updated_at: string; code_commit?: string | null; next_step?: string | null; deliverables: HydratedDeliverable[]; decisions: Array<Json & { next_step?: string }> };
+
+const MAX_CAPTURE_FILE_BYTES = 2 * 1024 * 1024;
 
 export class BusinessError extends Error {
   constructor(public status: number, public code: string, message: string, public details?: unknown) {
@@ -21,6 +25,84 @@ const optionalText = (value: unknown) => {
   const result = text(value);
   return result || null;
 };
+
+function stringList(value: unknown, label: string) {
+  if (value === undefined || value === null || value === "") return [] as string[];
+  const values = Array.isArray(value) ? value : [value];
+  const result = values.map(text).filter(Boolean);
+  if (result.length !== values.length) throw new BusinessError(400, `${label}_invalid`, `${label}包含无效 ID`);
+  if (new Set(result).size !== result.length) throw new BusinessError(400, `${label}_duplicate`, `${label}不能重复`);
+  return result;
+}
+
+function captureReadStatus(value: unknown) {
+  const status = text(value) || "provided";
+  if (!["unread", "provided", "read", "failed"].includes(status)) throw new BusinessError(400, "capture_read_status_invalid", "素材读取状态无效");
+  return status;
+}
+
+function captureKind(value: unknown, hasFile: boolean, hasSource: boolean) {
+  const kind = text(value) || (hasFile ? "file" : hasSource ? "link" : "text");
+  if (!/^[a-z][a-z0-9_-]{0,31}$/.test(kind)) throw new BusinessError(400, "capture_kind_invalid", "素材类型无效");
+  return kind;
+}
+
+function decodeFile(payload: Json) {
+  const encoded = text(payload.file_data_base64);
+  const fileName = optionalText(payload.file_name);
+  const hasMetadata = Boolean(fileName || payload.mime_type || payload.file_size !== undefined);
+  if (!encoded) {
+    if (payload.file_size !== undefined && (!Number.isInteger(Number(payload.file_size)) || Number(payload.file_size) < 0)) throw new BusinessError(400, "capture_file_size_invalid", "文件大小无效");
+    return { fileName, mimeType: optionalText(payload.mime_type), fileSize: payload.file_size === undefined ? null : Number(payload.file_size), bytes: null as Buffer | null, hasMetadata };
+  }
+  if (!fileName) throw new BusinessError(400, "capture_file_name_required", "保存文件时必须提供文件名");
+  const data = encoded.startsWith("data:") ? encoded.slice(encoded.indexOf(",") + 1) : encoded;
+  if (!data || !/^[A-Za-z0-9+/]*={0,2}$/.test(data) || data.length % 4 === 1) throw new BusinessError(400, "capture_file_invalid", "文件内容不是有效的 base64");
+  const bytes = Buffer.from(data, "base64");
+  if (bytes.length > MAX_CAPTURE_FILE_BYTES) throw new BusinessError(413, "capture_file_too_large", "素材文件不能超过 2 MB");
+  return { fileName, mimeType: optionalText(payload.mime_type) || "application/octet-stream", fileSize: bytes.length, bytes, hasMetadata: true };
+}
+
+function storeCaptureFile(id: string, fileName: string, bytes: Buffer) {
+  const safeName = basename(fileName).replace(/[^\w.\-\u4e00-\u9fff]+/g, "_").slice(0, 120) || "file";
+  const relativePath = join("assets", `${id}-${safeName}`);
+  const absolutePath = resolve(getDataDirectory(), relativePath);
+  mkdirSync(join(getDataDirectory(), "assets"), { recursive: true });
+  writeFileSync(absolutePath, bytes, { flag: "wx" });
+  return relativePath;
+}
+
+function captureView(row: Json): Json {
+  const { file_path: _filePath, ...rest } = row;
+  return { ...rest, has_file: Boolean(row.file_path), used_count: Number(row.used_count || 0), method_count: Number(row.method_count || 0) };
+}
+
+function methodView(row: Json): Json {
+  const { steps_json: _stepsJson, ...rest } = row;
+  return { ...rest, steps: JSON.parse(String(row.steps_json || "[]")), usage_count: Number(row.usage_count || 0) };
+}
+
+function linkTrialCaptures(trialId: string, captureIds: string[], timestamp = now()) {
+  const db = getDb();
+  const insert = db.prepare("INSERT OR IGNORE INTO trial_captures(trial_id,capture_id,position,created_at) VALUES (?,?,?,?)");
+  captureIds.forEach((captureId, position) => insert.run(trialId, captureId, position, timestamp));
+}
+
+function captureUsage(captureId: string) {
+  const db = getDb();
+  const methods = db.prepare("SELECT COUNT(*) AS count FROM methods WHERE capture_id=?").get(captureId) as { count: number };
+  const trials = db.prepare("SELECT COUNT(*) AS count FROM trial_captures WHERE capture_id=?").get(captureId) as { count: number };
+  return { method_count: Number(methods.count), used_count: Number(trials.count) };
+}
+
+function methodCaptures(methodId: string) {
+  return getDb().prepare("SELECT c.* FROM captures c JOIN methods m ON m.capture_id=c.id WHERE m.id=?").all(methodId).map((row) => captureView({ ...(row as Json), ...captureUsage(String((row as Json).id)) }));
+}
+
+function methodUsage(methodId: string) {
+  const row = getDb().prepare("SELECT COUNT(*) AS count FROM trials WHERE method_id=?").get(methodId) as { count: number };
+  return Number(row.count);
+}
 const stable = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
   if (value && typeof value === "object") {
@@ -55,33 +137,155 @@ export function idempotent(route: string, requestId: string | undefined, payload
 
 export function createCapture(payload: Json, requestId?: string) {
   return idempotent("POST /captures", requestId, payload, () => {
-    if (!payload.content && !payload.source) throw new BusinessError(400, "capture_content_required", "文本或来源链接至少提供一项");
-    const row = { id: randomUUID(), kind: payload.kind || "text", title: payload.title || "未命名输入", content: payload.content || null, source: payload.source || null, read_status: payload.read_status || "provided", created_at: now() };
-    getDb().prepare("INSERT INTO captures VALUES (@id,@kind,@title,@content,@source,@read_status,@created_at)").run(row);
+    const content = optionalText(payload.content);
+    const source = optionalText(payload.source);
+    const file = decodeFile(payload);
+    if (!content && !source && !file.bytes && !file.hasMetadata) throw new BusinessError(400, "capture_content_required", "链接、文本或文件至少提供一项");
+    if (file.hasMetadata && !file.bytes && !file.fileName) throw new BusinessError(400, "capture_file_name_required", "文件素材必须提供文件名");
+    const id = randomUUID();
+    let filePath: string | null = null;
+    try {
+      filePath = file.bytes && file.fileName ? storeCaptureFile(id, file.fileName, file.bytes) : null;
+    } catch (error) {
+      throw new BusinessError(500, "capture_file_save_failed", `素材文件保存失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+    const row = {
+      id,
+      kind: captureKind(payload.kind, Boolean(file.bytes || file.fileName), Boolean(source)),
+      title: text(payload.title) || file.fileName || "未命名输入",
+      content,
+      source,
+      read_status: captureReadStatus(payload.read_status),
+      file_name: file.fileName,
+      mime_type: file.mimeType,
+      file_size: file.fileSize,
+      file_path: filePath,
+      created_at: now(),
+    };
+    try {
+      getDb().prepare("INSERT INTO captures(id,kind,title,content,source,read_status,file_name,mime_type,file_size,file_path,created_at) VALUES (@id,@kind,@title,@content,@source,@read_status,@file_name,@mime_type,@file_size,@file_path,@created_at)").run(row);
+    } catch (error) {
+      if (filePath) {
+        const absolutePath = resolve(getDataDirectory(), filePath);
+        if (existsSync(absolutePath)) unlinkSync(absolutePath);
+      }
+      throw error;
+    }
     event("capture", row.id, "capture.created", row);
-    return { status: 201, body: row };
+    return { status: 201, body: captureView(row) };
   });
 }
 
 export function createMethod(payload: Json, requestId?: string) {
   return idempotent("POST /methods", requestId, payload, () => {
-    const row = { id: randomUUID(), capture_id: payload.capture_id || null, title: payload.title, purpose: payload.purpose, revision_label: payload.revision_label || "r1", steps_json: JSON.stringify(payload.steps || []), conditions: payload.conditions || null, created_at: now() };
-    if (!row.title || !row.purpose) throw new BusinessError(400, "method_fields_required", "方法标题和用途不能为空");
-    getDb().prepare("INSERT INTO methods VALUES (@id,@capture_id,@title,@purpose,@revision_label,@steps_json,@conditions,@created_at)").run(row);
+    const db = getDb();
+    const captureId = optionalText(payload.capture_id);
+    if (captureId && !db.prepare("SELECT id FROM captures WHERE id=?").get(captureId)) throw new BusinessError(404, "capture_not_found", "关联素材不存在");
+    const previousId = optionalText(payload.previous_method_id);
+    const previous = previousId ? db.prepare("SELECT * FROM methods WHERE id=?").get(previousId) as Json | undefined : undefined;
+    if (previousId && !previous) throw new BusinessError(404, "method_not_found", "前一方法版本不存在");
+    const steps = stringList(payload.steps, "方法步骤");
+    const title = text(payload.title);
+    const purpose = text(payload.purpose);
+    if (!title || !purpose || steps.length === 0) throw new BusinessError(400, "method_fields_required", "方法标题、用途和步骤不能为空");
+    const familyId = previous ? String(previous.family_id || previous.id) : optionalText(payload.family_id) || randomUUID();
+    const revisionNumber = previous ? Number(previous.revision_number || 1) + 1 : 1;
+    const row = { id: randomUUID(), capture_id: captureId, title, purpose, revision_label: text(payload.revision_label) || `r${revisionNumber}`, steps_json: JSON.stringify(steps), conditions: optionalText(payload.conditions), family_id: familyId, previous_method_id: previous?.id || null, revision_number: revisionNumber, created_at: now() };
+    db.prepare("INSERT INTO methods(id,capture_id,title,purpose,revision_label,steps_json,conditions,family_id,previous_method_id,revision_number,created_at) VALUES (@id,@capture_id,@title,@purpose,@revision_label,@steps_json,@conditions,@family_id,@previous_method_id,@revision_number,@created_at)").run(row);
     event("method", row.id, "method.created", row);
-    return { status: 201, body: { ...row, steps: JSON.parse(row.steps_json), steps_json: undefined } };
+    return { status: 201, body: methodView(row) };
   });
+}
+
+export function getCaptures(query = "", readStatus = "") {
+  const normalizedQuery = text(query).toLowerCase();
+  const normalizedStatus = text(readStatus);
+  if (normalizedStatus && !["unread", "provided", "read", "failed"].includes(normalizedStatus)) throw new BusinessError(400, "capture_read_status_invalid", "素材读取状态无效");
+  const rows = getDb().prepare(`
+    SELECT c.*,
+      (SELECT COUNT(*) FROM trial_captures tc WHERE tc.capture_id=c.id) AS used_count,
+      (SELECT COUNT(*) FROM methods m WHERE m.capture_id=c.id) AS method_count
+    FROM captures c
+    WHERE (? = '' OR lower(c.title) LIKE '%' || ? || '%' OR lower(COALESCE(c.content,'')) LIKE '%' || ? || '%' OR lower(COALESCE(c.source,'')) LIKE '%' || ? || '%')
+      AND (? = '' OR c.read_status = ?)
+    ORDER BY c.created_at DESC, c.id DESC
+  `).all(normalizedQuery, normalizedQuery, normalizedQuery, normalizedQuery, normalizedStatus, normalizedStatus) as Json[];
+  return { captures: rows.map(captureView), query: normalizedQuery, read_status: normalizedStatus || "all" };
+}
+
+export function getCapture(id: string) {
+  const row = getDb().prepare("SELECT * FROM captures WHERE id=?").get(id) as Json | undefined;
+  if (!row) throw new BusinessError(404, "capture_not_found", "素材不存在");
+  const trials = getDb().prepare("SELECT t.id,t.title,t.status FROM trials t JOIN trial_captures tc ON tc.trial_id=t.id WHERE tc.capture_id=? ORDER BY t.updated_at DESC").all(id);
+  const methods = getDb().prepare("SELECT id,title,purpose,revision_label,revision_number,previous_method_id,created_at FROM methods WHERE capture_id=? ORDER BY created_at DESC").all(id);
+  return { ...captureView({ ...row, ...captureUsage(id) }), trials, methods };
+}
+
+export function getCaptureFile(id: string) {
+  const row = getDb().prepare("SELECT id,file_name,mime_type,file_path FROM captures WHERE id=?").get(id) as { id: string; file_name?: string | null; mime_type?: string | null; file_path?: string | null } | undefined;
+  if (!row) throw new BusinessError(404, "capture_not_found", "素材不存在");
+  if (!row.file_path) throw new BusinessError(404, "capture_file_not_found", "该素材没有可预览文件");
+  const base = resolve(getDataDirectory());
+  const absolutePath = resolve(base, row.file_path);
+  if (!absolutePath.startsWith(`${base}${sep}`) || !existsSync(absolutePath)) throw new BusinessError(404, "capture_file_not_found", "素材文件不可读取");
+  return { content: readFileSync(absolutePath), fileName: row.file_name || "download", mimeType: row.mime_type || "application/octet-stream" };
+}
+
+export function updateCapture(id: string, payload: Json, requestId?: string) {
+  return idempotent(`PATCH /captures/${id}`, requestId, payload, () => {
+    const current = getDb().prepare("SELECT * FROM captures WHERE id=?").get(id) as Json | undefined;
+    if (!current) throw new BusinessError(404, "capture_not_found", "素材不存在");
+    const readStatus = payload.read_status === undefined ? String(current.read_status) : captureReadStatus(payload.read_status);
+    const title = payload.title === undefined ? String(current.title) : text(payload.title);
+    if (!title) throw new BusinessError(400, "capture_title_required", "素材标题不能为空");
+    const next = { ...current, title, read_status: readStatus };
+    getDb().prepare("UPDATE captures SET title=?,read_status=? WHERE id=?").run(title, readStatus, id);
+    event("capture", id, "capture.updated", next);
+    return { status: 200, body: captureView({ ...next, ...captureUsage(id) }) };
+  });
+}
+
+export function getMethods(query = "") {
+  const normalizedQuery = text(query).toLowerCase();
+  const rows = getDb().prepare(`
+    SELECT m.*, (SELECT COUNT(*) FROM trials t WHERE t.method_id=m.id) AS usage_count
+    FROM methods m
+    WHERE (? = '' OR lower(m.title) LIKE '%' || ? || '%' OR lower(m.purpose) LIKE '%' || ? || '%')
+    ORDER BY m.created_at DESC, m.id DESC
+  `).all(normalizedQuery, normalizedQuery, normalizedQuery) as Json[];
+  return { methods: rows.map(methodView), query: normalizedQuery };
+}
+
+export function getMethod(id: string) {
+  const row = getDb().prepare("SELECT m.*, (SELECT COUNT(*) FROM trials t WHERE t.method_id=m.id) AS usage_count FROM methods m WHERE m.id=?").get(id) as Json | undefined;
+  if (!row) throw new BusinessError(404, "method_not_found", "方法版本不存在");
+  const family = getDb().prepare("SELECT id,title,revision_label,revision_number,previous_method_id,created_at FROM methods WHERE family_id=? ORDER BY revision_number").all(String(row.family_id || row.id));
+  return { ...methodView(row), captures: methodCaptures(id), family };
+}
+
+export function getLibrary(query = "") {
+  return { ...getCaptures(query), ...getMethods(query) };
 }
 
 export function createTrial(payload: Json, requestId?: string) {
   return idempotent("POST /trials", requestId, payload, () => {
+    const db = getDb();
     const timestamp = now();
     const project = projectOrThrow(payload.project_id);
-    const row = { id: randomUUID(), title: text(payload.title), goal: text(payload.goal), method_id: optionalText(payload.method_id), capture_id: optionalText(payload.capture_id), project_id: project?.id || null, status: text(payload.status) || "in_progress", environment: optionalText(payload.environment), actual_result: null, code_repository: optionalText(payload.code_repository), code_branch: optionalText(payload.code_branch), code_commit: optionalText(payload.code_commit), next_step: optionalText(payload.next_step), revision: 1, created_at: timestamp, updated_at: timestamp };
+    const methodId = optionalText(payload.method_id);
+    const method = methodId ? db.prepare("SELECT * FROM methods WHERE id=?").get(methodId) as Json | undefined : undefined;
+    if (methodId && !method) throw new BusinessError(404, "method_not_found", "方法版本不存在");
+    const requestedCaptureIds = stringList(payload.capture_ids === undefined ? payload.capture_id : payload.capture_ids, "素材");
+    const captureIds = requestedCaptureIds.length > 0 ? requestedCaptureIds : method?.capture_id ? [String(method.capture_id)] : [];
+    for (const captureId of captureIds) {
+      if (!db.prepare("SELECT id FROM captures WHERE id=?").get(captureId)) throw new BusinessError(404, "capture_not_found", "关联素材不存在");
+    }
+    const row = { id: randomUUID(), title: text(payload.title), goal: text(payload.goal), method_id: methodId, capture_id: captureIds[0] || null, project_id: project?.id || null, status: text(payload.status) || "in_progress", environment: optionalText(payload.environment), actual_result: null, code_repository: optionalText(payload.code_repository), code_branch: optionalText(payload.code_branch), code_commit: optionalText(payload.code_commit), next_step: optionalText(payload.next_step), revision: 1, created_at: timestamp, updated_at: timestamp };
     if (!row.title || !row.goal) throw new BusinessError(400, "trial_fields_required", "尝试标题和目标不能为空");
-    getDb().prepare("INSERT INTO trials(id,title,goal,method_id,capture_id,project_id,status,environment,actual_result,code_repository,code_branch,code_commit,next_step,revision,created_at,updated_at) VALUES (@id,@title,@goal,@method_id,@capture_id,@project_id,@status,@environment,@actual_result,@code_repository,@code_branch,@code_commit,@next_step,@revision,@created_at,@updated_at)").run(row);
-    event("trial", row.id, "trial.created", row);
-    return { status: 201, body: row };
+    db.prepare("INSERT INTO trials(id,title,goal,method_id,capture_id,project_id,status,environment,actual_result,code_repository,code_branch,code_commit,next_step,revision,created_at,updated_at) VALUES (@id,@title,@goal,@method_id,@capture_id,@project_id,@status,@environment,@actual_result,@code_repository,@code_branch,@code_commit,@next_step,@revision,@created_at,@updated_at)").run(row);
+    linkTrialCaptures(row.id, captureIds, timestamp);
+    event("trial", row.id, "trial.created", { ...row, capture_ids: captureIds });
+    return { status: 201, body: { ...row, capture_ids: captureIds } };
   });
 }
 
@@ -216,8 +420,9 @@ export function startTrial(payload: Json, requestId?: string) {
     const project = projectOrThrow(payload.project_id);
     const capture = { id: randomUUID(), kind, title, content, source: null, read_status: "provided", created_at: timestamp };
     const trial = { id: randomUUID(), title, goal: content, method_id: null, capture_id: capture.id, project_id: project?.id || null, status: "in_progress", environment: optionalText(payload.environment) || "web", actual_result: null, code_repository: optionalText(payload.code_repository), code_branch: optionalText(payload.code_branch), code_commit: optionalText(payload.code_commit), next_step: optionalText(payload.next_step), revision: 1, created_at: timestamp, updated_at: timestamp };
-    db.prepare("INSERT INTO captures VALUES (@id,@kind,@title,@content,@source,@read_status,@created_at)").run(capture);
+    db.prepare("INSERT INTO captures(id,kind,title,content,source,read_status,created_at) VALUES (@id,@kind,@title,@content,@source,@read_status,@created_at)").run(capture);
     db.prepare("INSERT INTO trials(id,title,goal,method_id,capture_id,project_id,status,environment,actual_result,code_repository,code_branch,code_commit,next_step,revision,created_at,updated_at) VALUES (@id,@title,@goal,@method_id,@capture_id,@project_id,@status,@environment,@actual_result,@code_repository,@code_branch,@code_commit,@next_step,@revision,@created_at,@updated_at)").run(trial);
+    linkTrialCaptures(trial.id, [capture.id], timestamp);
     event("capture", capture.id, "capture.created", capture);
     event("trial", trial.id, "trial.created", trial);
     return { status: 201, body: { ...trial, capture } };
@@ -345,7 +550,8 @@ function hydrateTrial(trial: Json): HydratedTrial {
   const db = getDb();
   const method = trial.method_id ? db.prepare("SELECT * FROM methods WHERE id=?").get(trial.method_id) as Json : null;
   const captureId = trial.capture_id || method?.capture_id;
-  const capture = captureId ? db.prepare("SELECT * FROM captures WHERE id=?").get(captureId) as Json : null;
+  const captures = db.prepare("SELECT c.*, (SELECT COUNT(*) FROM trial_captures tc2 WHERE tc2.capture_id=c.id) AS used_count, (SELECT COUNT(*) FROM methods m2 WHERE m2.capture_id=c.id) AS method_count FROM captures c JOIN trial_captures tc ON tc.capture_id=c.id WHERE tc.trial_id=? ORDER BY tc.position, c.created_at").all(trial.id).map((row) => captureView(row as Json));
+  const capture = captureId ? captures.find((item) => item.id === captureId) || captureView({ ...(db.prepare("SELECT * FROM captures WHERE id=?").get(captureId) as Json), ...captureUsage(String(captureId)) }) : null;
   const project = trial.project_id ? db.prepare("SELECT id,name,category,status FROM projects WHERE id=?").get(trial.project_id) as Json : null;
   const decisions = db.prepare("SELECT * FROM decisions WHERE trial_id=? ORDER BY created_at DESC").all(trial.id) as Array<Json & { next_step?: string }>;
   const deliverables = db.prepare("SELECT d.*, COALESCE((SELECT MAX(e.sequence) FROM events e WHERE e.entity_type='deliverable' AND e.entity_id=d.id AND e.kind='deliverable.created'), 0) AS write_sequence FROM deliverables d WHERE d.trial_id=? ORDER BY d.created_at, write_sequence").all(trial.id) as Json[];
@@ -354,7 +560,7 @@ function hydrateTrial(trial: Json): HydratedTrial {
     const hydratedVersions = versions.map((version) => ({ ...version, handles_feedback_ids: JSON.parse(String(version.handles_feedback_json)), feedback: db.prepare("SELECT * FROM feedback WHERE version_id=? ORDER BY created_at").all(version.id) as Json[] })) as unknown as HydratedVersion[];
     return { ...deliverable, review_status: reviewStatus(deliverable, hydratedVersions), versions: hydratedVersions } as unknown as HydratedDeliverable;
   });
-  return { ...trial, next_step: decisions[0]?.next_step || trial.next_step || null, project, method: method ? { ...method, steps: JSON.parse(String(method.steps_json)) } : null, capture, deliverables: nested, decisions } as unknown as HydratedTrial;
+  return { ...trial, next_step: decisions[0]?.next_step || trial.next_step || null, project, method: method ? { ...methodView({ ...method, usage_count: methodUsage(String(method.id)) }), captures: methodCaptures(String(method.id)) } : null, capture, captures, deliverables: nested, decisions } as unknown as HydratedTrial;
 }
 
 export function getContext(trialId: string) {

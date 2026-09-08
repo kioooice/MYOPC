@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FileText, Folder, GitBranch, Inbox, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Rocket, Search, Sparkles, X } from "lucide-react";
+import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FileText, Folder, GitBranch, Inbox, Link2, Menu, PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, Rocket, Search, Sparkles, Upload, X } from "lucide-react";
 import { PROJECT_CATEGORIES } from "@/lib/project-categories";
 import { assertPendingWriteCanSend, clearPendingWrite, loadPendingWrite, storePendingWrite, type PendingWrite } from "@/lib/pending-write";
 
@@ -9,15 +9,17 @@ type Feedback = { id: string; content: string; status: string; source?: string; 
 type Version = { id: string; ordinal: number; content: string; created_at?: string; review_status?: string; feedback: Feedback[]; handles_feedback_ids: string[] };
 type Deliverable = { id: string; title: string; type: string; accepted_version_id: string | null; review_status?: string; created_at?: string; versions: Version[] };
 type Decision = { id: string; rationale: string; adjustment: string; next_step: string; execution_status: string };
-type Trial = { id: string; title: string; goal: string; status: string; revision: number; project_id?: string | null; project?: { id: string; name: string; category: string } | null; code_repository?: string | null; code_branch?: string | null; code_commit?: string | null; next_step?: string | null; method: null | { title: string; revision_label: string; purpose: string; steps: string[] }; capture: null | { title: string; kind: string; source?: string }; deliverables: Deliverable[]; decisions: Decision[] };
+type Trial = { id: string; title: string; goal: string; status: string; revision: number; project_id?: string | null; project?: { id: string; name: string; category: string } | null; code_repository?: string | null; code_branch?: string | null; code_commit?: string | null; next_step?: string | null; method: null | { title: string; revision_label: string; purpose: string; steps: string[] }; capture: null | { title: string; kind: string; source?: string }; captures?: Array<{ id: string; title: string; kind: string }>; deliverables: Deliverable[]; decisions: Decision[] };
 type ProjectProfile = { summary: string; highlights: string[]; usage: string[]; stage: string; stack: string };
 type ProjectLocation = { id: string; label: string; environment: string; repository_url?: string | null; branch?: string | null; commit_sha?: string | null; deploy_url?: string | null; notes?: string | null };
 type ProjectFeedback = Feedback & { trial_id: string; trial_title: string; version_id: string; version_ordinal: number };
 type ProjectPendingReview = { id: string; trial_id: string; trial_title: string; deliverable_id: string; deliverable_title: string; version_ordinal: number; content: string };
 type Project = { id: string; name: string; category: string; status: string; description: string | null; created_at: string; updated_at: string; profile: ProjectProfile | null; locations: ProjectLocation[]; trial_count: number; open_feedback_count: number; pending_review_count: number; pending_reviews: ProjectPendingReview[]; open_feedback: ProjectFeedback[]; latest_trial: { id: string; title: string; goal: string; status: string; updated_at: string; code_commit?: string | null } | null; latest_deliverable: { id: string; trial_id: string; trial_title?: string; title: string; type: string; version: number | null; review_status?: string; content?: string | null; updated_at: string } | null; next_step: string | null };
+type Capture = { id: string; kind: string; title: string; content?: string | null; source?: string | null; read_status: string; file_name?: string | null; mime_type?: string | null; file_size?: number | null; has_file?: boolean; used_count?: number; method_count?: number; created_at: string };
+type Method = { id: string; title: string; purpose: string; revision_label: string; steps: string[]; conditions?: string | null; family_id?: string | null; previous_method_id?: string | null; revision_number: number; created_at: string; usage_count?: number; captures?: Capture[] };
 type WriteRequest = PendingWrite;
 type ProjectCategory = (typeof PROJECT_CATEGORIES)[number];
-type View = "overview" | "projects" | "active" | "inbox" | "deliverables";
+type View = "overview" | "projects" | "active" | "inbox" | "deliverables" | "library";
 
 const statusLabel = (status: string) => ({ in_progress: "进行中", review: "审阅中", done: "已完成", paused: "已暂停" }[status] || status);
 const kindLabel = (kind?: string) => kind === "failure" ? "从失败开始" : kind === "discovery" ? "从资料开始" : "从需求开始";
@@ -29,6 +31,8 @@ const shortTime = (value?: string | null) => value ? new Date(value).toLocaleTim
 export default function Home() {
   const [trials, setTrials] = useState<Trial[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [captures, setCaptures] = useState<Capture[]>([]);
+  const [methods, setMethods] = useState<Method[]>([]);
   const [projectCategories, setProjectCategories] = useState<ProjectCategory[]>([]);
   const [selected, setSelected] = useState("");
   const [selectedProject, setSelectedProject] = useState("");
@@ -48,15 +52,18 @@ export default function Home() {
     if (!quiet) setLoading(true);
     setRefreshing(true);
     try {
-      const [dashboardResponse, projectsResponse] = await Promise.all([
+      const [dashboardResponse, projectsResponse, libraryResponse] = await Promise.all([
         fetch("/api/v1/dashboard", { cache: "no-store" }),
         fetch("/api/v1/projects", { cache: "no-store" }),
+        fetch("/api/v1/library", { cache: "no-store" }),
       ]);
-      if (!dashboardResponse.ok || !projectsResponse.ok) throw new Error("读取工作台失败，请检查连接后重试");
-      const [data, projectData] = await Promise.all([dashboardResponse.json(), projectsResponse.json()]);
+      if (!dashboardResponse.ok || !projectsResponse.ok || !libraryResponse.ok) throw new Error("读取工作台失败，请检查连接后重试");
+      const [data, projectData, libraryData] = await Promise.all([dashboardResponse.json(), projectsResponse.json(), libraryResponse.json()]);
       setTrials(data.trials);
       setProjects(projectData.projects);
       setProjectCategories(projectData.categories);
+      setCaptures(libraryData.captures || []);
+      setMethods(libraryData.methods || []);
       setLatestEventSequence(data.latest_event_sequence || 0);
       setLastSyncedAt(new Date());
       setError("");
@@ -92,6 +99,8 @@ export default function Home() {
 
   function openTrial(id: string) { setSelected(id); setSelectedProject(""); setView("active"); }
   function openProject(id: string) { setSelected(""); setSelectedProject(id); setView("projects"); }
+
+  function openLibrary() { setSelected(""); setSelectedProject(""); setView("library"); }
 
   async function sendWrite(request: WriteRequest) {
     const existing = pendingWriteRef.current;
@@ -179,7 +188,7 @@ export default function Home() {
         </div>
         <div className="nav-divider" />
         <button className={view === "projects" && !selected ? "nav-item active" : "nav-item"} onClick={() => { setView("projects"); setSelected(""); setSelectedProject(""); }}><Folder size={17} /><span>项目</span>{Boolean(projects.length) && <b>{projects.length}</b>}</button>
-        {plannedNav.map(({ label, icon: Icon }) => <button key={label} className="nav-item planned-nav-item" disabled aria-label={`${label}，规划中`}><Icon size={17} /><span>{label}</span><small>规划中</small></button>)}
+        {plannedNav.map(({ label, icon: Icon }) => <button key={label} className={view === "library" ? "nav-item active" : "nav-item"} onClick={openLibrary}><Icon size={17} /><span>{label}</span>{captures.length > 0 && <b>{captures.length}</b>}</button>)}
       </nav>
       <div className="sidebar-section"><div className="section-label"><span>最近行动</span>{trials.length > 0 && <small>{trials.length}</small>}</div>
         {trials.length > 4 && <label className="search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索" /></label>}
@@ -200,6 +209,7 @@ export default function Home() {
         {!loading && !trial && view === "active" && <ListView title="进行中的行动" subtitle="从这里继续目标、产物和反馈；审阅中的行动也保留在这里。" trials={activeTrials} onOpen={openTrial} empty="还没有进行中的行动" />}
         {!loading && !trial && view === "inbox" && <InboxView trials={trials} onOpen={openTrial} />}
         {!loading && !trial && view === "deliverables" && <DeliverablesView trials={trials} onOpen={openTrial} />}
+        {!loading && !trial && view === "library" && <LibraryView captures={captures} methods={methods} projects={projects} busy={busy} onWrite={sendWrite} onReload={() => load(true)} />}
         {trial && <TrialWorkspace trial={trial} busy={busy} onFeedback={addFeedback} onAccept={accept} onDraft={createDraft} />}
       </div>
     </section>
@@ -273,9 +283,83 @@ function DeliverablesView({ trials, onOpen }: { trials: Trial[]; onOpen: (id: st
   return <div className="list-view"><div className="view-title"><h1>成果</h1><p>所有稿件、视频和工具版本。</p></div>{rows.length === 0 ? <div className="quiet-empty"><FileText size={22} /><p>还没有成果</p></div> : <div className="rows">{rows.map(({ trial, deliverable }) => <button key={deliverable.id} onClick={() => onOpen(trial.id)}><span className="row-icon"><FileText size={16} /></span><span><strong>{deliverable.title}</strong><small>{trial.title} · {deliverable.versions.length} 个版本</small></span><b>{reviewStatusLabel(deliverable.review_status)}</b></button>)}</div>}</div>;
 }
 
+function LibraryView({ captures, methods, projects, busy, onWrite, onReload }: { captures: Capture[]; methods: Method[]; projects: Project[]; busy: boolean; onWrite: (request: WriteRequest) => Promise<unknown>; onReload: () => void }) {
+  const [tab, setTab] = useState<"captures" | "methods">("captures");
+  const [query, setQuery] = useState("");
+  const [selectedCaptures, setSelectedCaptures] = useState<string[]>([]);
+  const [message, setMessage] = useState("");
+  const visibleCaptures = captures.filter((item) => `${item.title} ${item.content || ""} ${item.source || ""}`.toLowerCase().includes(query.toLowerCase()));
+  const visibleMethods = methods.filter((item) => `${item.title} ${item.purpose}`.toLowerCase().includes(query.toLowerCase()));
+  const toggleCapture = (id: string) => setSelectedCaptures((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+
+  async function saveCapture(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const file = data.get("file");
+    const requestBody: Record<string, unknown> = { title: data.get("title"), content: data.get("content"), source: data.get("source"), kind: data.get("kind") };
+    if (file instanceof File && file.size > 0) {
+      if (file.size > 2 * 1024 * 1024) { setMessage("文件不能超过 2 MB"); return; }
+      requestBody.file_name = file.name;
+      requestBody.mime_type = file.type || "application/octet-stream";
+      requestBody.file_data_base64 = await toBase64(file);
+    }
+    try {
+      await onWrite({ path: "/api/v1/captures", body: requestBody, requestId: crypto.randomUUID(), label: "素材保存" });
+      form.reset(); setMessage("素材已保存"); onReload();
+    } catch (cause) { setMessage(cause instanceof Error ? cause.message : "素材保存失败"); }
+  }
+
+  async function markRead(capture: Capture) {
+    try {
+      await onWrite({ path: `/api/v1/captures/${capture.id}`, body: { title: capture.title, read_status: "read" }, requestId: crypto.randomUUID(), label: "标记素材" });
+      onReload();
+    } catch (cause) { setMessage(cause instanceof Error ? cause.message : "标记失败"); }
+  }
+
+  async function createAction(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const selectedMethod = data.get("method_id")?.toString() || "";
+    if (!selectedMethod || selectedCaptures.length === 0) { setMessage("请选择一个方法版本和至少一份素材"); return; }
+    try {
+      await onWrite({ path: "/api/v1/trials", body: { title: data.get("title"), goal: data.get("goal"), method_id: selectedMethod, capture_ids: selectedCaptures, project_id: data.get("project_id") || undefined }, requestId: crypto.randomUUID(), label: "内容行动创建" });
+      setMessage("内容行动已创建"); setSelectedCaptures([]); onReload();
+    } catch (cause) { setMessage(cause instanceof Error ? cause.message : "行动创建失败"); }
+  }
+
+  return <div className="library-view"><div className="view-title"><span className="eyebrow">能力</span><h1>把素材变成下一次行动</h1><p>先收下链接、文字或文件，再选择已有方法和多份素材开始内容生产。收纳不会自动安装或执行任何工具。</p></div>
+    <div className="library-toolbar"><div className="library-tabs"><button className={tab === "captures" ? "active" : ""} onClick={() => setTab("captures")}>素材库 <b>{captures.length}</b></button><button className={tab === "methods" ? "active" : ""} onClick={() => setTab("methods")}>方法与工具 <b>{methods.length}</b></button></div><label className="library-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、正文或来源" /></label></div>
+    {message && <div className="library-message">{message}</div>}
+    {tab === "captures" ? <><form className="capture-form" onSubmit={saveCapture}><div className="capture-form-title"><Plus size={16} />收下一份新素材</div><div className="capture-form-grid"><input name="title" placeholder="标题（可选）" /><input name="source" type="url" placeholder="来源链接（可选）" /><select name="kind" defaultValue="text" aria-label="素材类型"><option value="text">文本/想法</option><option value="link">链接</option><option value="image">图片</option><option value="video">视频</option><option value="tool">工具或 Skill</option></select><input name="file" type="file" aria-label="选择文件（最大 2 MB）" /><textarea name="content" rows={3} placeholder="粘贴文字或记下想法（可选）" /><button disabled={busy}><Upload size={14} />保存素材</button></div></form><div className="capture-list">{visibleCaptures.length === 0 ? <div className="quiet-empty"><Link2 size={22} /><p>还没有匹配的素材</p></div> : visibleCaptures.map((capture) => <article className={selectedCaptures.includes(capture.id) ? "capture-card selected" : "capture-card"} key={capture.id}><label className="capture-select"><input type="checkbox" checked={selectedCaptures.includes(capture.id)} onChange={() => toggleCapture(capture.id)} /><span>用于下一次行动</span></label><div className="capture-card-head"><div><span className="capture-kind">{capture.kind}</span><h2>{capture.title}</h2></div><span className={`read-status ${capture.read_status}`}>{capture.read_status === "read" ? "已读取" : capture.read_status === "failed" ? "读取失败" : "未整理"}</span></div>{capture.content && <p>{capture.content}</p>}{capture.source && <a href={capture.source} target="_blank" rel="noreferrer"><ExternalLink size={12} />打开来源</a>}{capture.has_file && <a href={`/api/v1/captures/${capture.id}/file`} target="_blank" rel="noreferrer"><FileText size={12} />预览文件{capture.file_name ? ` · ${capture.file_name}` : ""}</a>}<div className="capture-card-foot"><span>已用于 {capture.used_count || 0} 次行动 · 关联 {capture.method_count || 0} 个方法</span>{capture.read_status !== "read" && <button onClick={() => void markRead(capture)}>标为已读取</button>}</div></article>)}</div></> : <><MethodForm captures={captures} methods={methods} busy={busy} onWrite={onWrite} onReload={onReload} onMessage={setMessage} /><div className="method-list">{visibleMethods.length === 0 ? <div className="quiet-empty"><BookOpen size={22} /><p>还没有匹配的方法版本</p></div> : visibleMethods.map((method) => <article className="method-card" key={method.id}><div className="capture-card-head"><div><span className="capture-kind">方法版本 · {method.revision_label}</span><h2>{method.title}</h2></div><span className="read-status read">已记录</span></div><p>{method.purpose}</p><ol>{method.steps.map((step) => <li key={step}>{step}</li>)}</ol><div className="capture-card-foot"><span>已用于 {method.usage_count || 0} 次行动</span><small>{method.conditions || "未补充限制条件"}</small></div></article>)}</div></>}
+    {tab === "captures" && selectedCaptures.length > 0 && <form className="action-form" onSubmit={createAction}><div><span className="eyebrow">组合素材</span><h2>用选中的 {selectedCaptures.length} 份素材发起内容行动</h2></div><input name="title" required placeholder="行动标题" /><textarea name="goal" required rows={2} placeholder="面向谁、要解决什么问题？" /><div className="action-form-row"><select name="method_id" defaultValue="" aria-label="选择方法版本"><option value="" disabled>选择方法版本</option>{methods.map((method) => <option key={method.id} value={method.id}>{method.title} · {method.revision_label}</option>)}</select><select name="project_id" defaultValue="" aria-label="关联项目"><option value="">不关联项目</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><button disabled={busy}>开始内容行动</button></div></form>}
+  </div>;
+}
+
+function MethodForm({ captures, methods, busy, onWrite, onReload, onMessage }: { captures: Capture[]; methods: Method[]; busy: boolean; onWrite: (request: WriteRequest) => Promise<unknown>; onReload: () => void; onMessage: (message: string) => void }) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const steps = data.get("steps")?.toString().split("\n").map((item) => item.trim()).filter(Boolean) || [];
+    try {
+      await onWrite({ path: "/api/v1/methods", body: { title: data.get("title"), purpose: data.get("purpose"), steps, conditions: data.get("conditions"), capture_id: data.get("capture_id") || undefined, previous_method_id: data.get("previous_method_id") || undefined }, requestId: crypto.randomUUID(), label: "方法版本保存" });
+      form.reset(); onMessage("方法版本已保存"); onReload();
+    } catch (cause) { onMessage(cause instanceof Error ? cause.message : "方法保存失败"); }
+  }
+  return <form className="capture-form method-form" onSubmit={submit}><div className="capture-form-title"><Plus size={16} />记录方法版本</div><div className="capture-form-grid"><input name="title" required placeholder="方法名称" /><input name="purpose" required placeholder="适用目的" /><select name="capture_id" defaultValue="" aria-label="来源素材"><option value="">不关联来源素材</option>{captures.map((capture) => <option key={capture.id} value={capture.id}>{capture.title}</option>)}</select><select name="previous_method_id" defaultValue="" aria-label="前一方法版本"><option value="">创建全新方法</option>{methods.map((method) => <option key={method.id} value={method.id}>基于 {method.title} · {method.revision_label}</option>)}</select><textarea name="steps" required rows={4} placeholder={"每行一个步骤\n例如：核对事实\n确定受众和角度"} /><input name="conditions" placeholder="依赖条件或限制（可选）" /><button disabled={busy}><BookOpen size={14} />保存版本</button></div></form>;
+}
+
+async function toBase64(file: File) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
 function TrialWorkspace({ trial, busy, onFeedback, onAccept, onDraft }: { trial: Trial; busy: boolean; onFeedback: (event: FormEvent<HTMLFormElement>, versionId: string) => void; onAccept: (deliverableId: string, versionId: string) => void; onDraft: (event: FormEvent<HTMLFormElement>, trialId: string) => void }) {
   const codeRef = [trial.code_branch, trial.code_commit && trial.code_commit.slice(0, 8)].filter(Boolean).join(" · ");
-  return <div className="trial-workspace"><div className="workspace-title"><div><span>{kindLabel(trial.capture?.kind)}</span><h1>{trial.title}</h1><p>{trial.goal}</p></div><b>{statusLabel(trial.status)}</b></div><div className="context-row"><div><span>输入</span><strong>{trial.capture?.title || "未关联"}</strong></div><div><span>项目</span><strong>{trial.project?.name || "未关联项目"}</strong></div><div><span>代码版本</span><strong>{codeRef || "未记录"}</strong></div><div><span>下一步</span><strong>{trial.next_step || "形成第一个可审阅成果"}</strong></div></div>{trial.deliverables.length === 0 && <div className="workspace-empty"><FileText size={22} /><h2>添加第一个可审阅成果</h2><p>可以先放一段短稿，获得反馈后再继续迭代。</p><DraftForm busy={busy} onSubmit={(event) => onDraft(event, trial.id)} /></div>}{trial.deliverables.map((deliverable) => <section className="deliverable" key={deliverable.id}><div className="deliverable-head"><div><span>成果 · {deliverable.type === "article" ? "图文" : deliverable.type}</span><h2>{deliverable.title}</h2></div><b>{reviewStatusLabel(deliverable.review_status)}</b></div><div className="version-grid">{deliverable.versions.map((version) => <article className="version-card" key={version.id}><div className="version-meta"><strong>v{version.ordinal}</strong>{deliverable.accepted_version_id === version.id && <span>采用版本</span>}{deliverable.versions[0]?.id === version.id && deliverable.accepted_version_id !== version.id && <span>{reviewStatusLabel(deliverable.review_status)}</span>}</div><div className="article-preview">{version.content.split("\n").map((line, index) => line.startsWith("# ") ? <h3 key={index}>{line.slice(2)}</h3> : <p key={index}>{line || <br />}</p>)}</div>{version.handles_feedback_ids.length > 0 && <p className="handled">已处理 {version.handles_feedback_ids.length} 条反馈</p>}<div className="feedback-list">{version.feedback.map((item) => <p key={item.id}><span>{item.status === "handled" ? "已处理" : feedbackKindLabel(item.kind)}</span><small>{sourceLabel(item.source)}：</small>{item.content}</p>)}</div><form onSubmit={(event) => onFeedback(event, version.id)}><label htmlFor={`feedback-${version.id}`}>留下反馈</label><div className="feedback-form-row"><select name="kind" defaultValue="revision" aria-label="反馈类型"><option value="revision">待修改</option><option value="review">待审阅</option></select><input id={`feedback-${version.id}`} name="content" placeholder="写下具体意见" disabled={busy} /><button disabled={busy}>保存</button></div></form>{deliverable.accepted_version_id !== version.id && <button className="accept-button" disabled={busy} onClick={() => onAccept(deliverable.id, version.id)}>采用 v{version.ordinal}</button>}</article>)}</div></section>)}{trial.decisions.length > 0 && <section className="decision"><span>本轮判断</span><h2>{trial.decisions[0].adjustment}</h2><p>{trial.decisions[0].rationale}</p><div><small>下一步</small>{trial.decisions[0].next_step}<b>拟议</b></div></section>}</div>;
+  return <div className="trial-workspace"><div className="workspace-title"><div><span>{kindLabel(trial.capture?.kind)}</span><h1>{trial.title}</h1><p>{trial.goal}</p></div><b>{statusLabel(trial.status)}</b></div><div className="context-row"><div><span>输入</span><strong>{trial.captures?.length ? `${trial.captures.length} 份素材` : trial.capture?.title || "未关联"}</strong></div><div><span>项目</span><strong>{trial.project?.name || "未关联项目"}</strong></div><div><span>方法版本</span><strong>{trial.method ? `${trial.method.title} · ${trial.method.revision_label}` : codeRef || "未记录"}</strong></div><div><span>下一步</span><strong>{trial.next_step || "形成第一个可审阅成果"}</strong></div></div>{Boolean(trial.captures?.length) && <div className="trial-materials">{trial.captures!.map((capture) => <span key={capture.id}>{capture.title}</span>)}</div>}{trial.deliverables.length === 0 && <div className="workspace-empty"><FileText size={22} /><h2>添加第一个可审阅成果</h2><p>可以先放一段短稿，获得反馈后再继续迭代。</p><DraftForm busy={busy} onSubmit={(event) => onDraft(event, trial.id)} /></div>}{trial.deliverables.map((deliverable) => <section className="deliverable" key={deliverable.id}><div className="deliverable-head"><div><span>成果 · {deliverable.type === "article" ? "图文" : deliverable.type}</span><h2>{deliverable.title}</h2></div><b>{reviewStatusLabel(deliverable.review_status)}</b></div><div className="version-grid">{deliverable.versions.map((version) => <article className="version-card" key={version.id}><div className="version-meta"><strong>v{version.ordinal}</strong>{deliverable.accepted_version_id === version.id && <span>采用版本</span>}{deliverable.versions[0]?.id === version.id && deliverable.accepted_version_id !== version.id && <span>{reviewStatusLabel(deliverable.review_status)}</span>}</div><div className="article-preview">{version.content.split("\n").map((line, index) => line.startsWith("# ") ? <h3 key={index}>{line.slice(2)}</h3> : <p key={index}>{line || <br />}</p>)}</div>{version.handles_feedback_ids.length > 0 && <p className="handled">已处理 {version.handles_feedback_ids.length} 条反馈</p>}<div className="feedback-list">{version.feedback.map((item) => <p key={item.id}><span>{item.status === "handled" ? "已处理" : feedbackKindLabel(item.kind)}</span><small>{sourceLabel(item.source)}：</small>{item.content}</p>)}</div><form onSubmit={(event) => onFeedback(event, version.id)}><label htmlFor={`feedback-${version.id}`}>留下反馈</label><div className="feedback-form-row"><select name="kind" defaultValue="revision" aria-label="反馈类型"><option value="revision">待修改</option><option value="review">待审阅</option></select><input id={`feedback-${version.id}`} name="content" placeholder="写下具体意见" disabled={busy} /><button disabled={busy}>保存</button></div></form>{deliverable.accepted_version_id !== version.id && <button className="accept-button" disabled={busy} onClick={() => onAccept(deliverable.id, version.id)}>采用 v{version.ordinal}</button>}</article>)}</div></section>)}{trial.decisions.length > 0 && <section className="decision"><span>本轮判断</span><h2>{trial.decisions[0].adjustment}</h2><p>{trial.decisions[0].rationale}</p><div><small>下一步</small>{trial.decisions[0].next_step}<b>拟议</b></div></section>}</div>;
 }
 
 function DraftForm({ busy, onSubmit }: { busy: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {

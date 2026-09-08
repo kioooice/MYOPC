@@ -1,9 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { backupDatabase, restoreDatabase } from "../lib/backup";
-import { BusinessError, acceptVersion, createCapture, createDecision, createDraft, createFeedback, createProject, createProjectLocation, createTrial, createVersion, getContext, getProject, getProjects, startTrial, updateProject, updateTrial } from "../lib/business";
+import { BusinessError, acceptVersion, createCapture, createDecision, createDraft, createFeedback, createMethod, createProject, createProjectLocation, createTrial, createVersion, getCapture, getCaptureFile, getCaptures, getContext, getMethod, getMethods, getProject, getProjects, startTrial, updateCapture, updateProject, updateTrial } from "../lib/business";
 import { closeDbForTests, getDb } from "../lib/db";
 
 let directory: string;
@@ -155,5 +155,47 @@ describe("S0 business invariants", () => {
     createDecision({ trial_id: trial.id, rationale: "新的判断依据", adjustment: "调整工作方向", next_step: "新的下一步", execution_status: "proposed" }, "next-decision");
     expect(getContext(String(trial.id))).toMatchObject({ next_step: "新的下一步" });
     expect(getProject(project.id).next_step).toBe("新的下一步");
+  });
+
+  it("stores searchable text, links and private files with honest read states", () => {
+    const textCapture = createCapture({ title: "受众访谈笔记", content: "用户先想知道能得到什么", read_status: "provided" }, "library-text").body as { id: string };
+    createCapture({ title: "外部教程", source: "https://example.com/tutorial", read_status: "unread" }, "library-link");
+    const fileCapture = createCapture({ title: "测试说明", file_name: "sample.txt", mime_type: "text/plain", file_data_base64: Buffer.from("preview body").toString("base64"), read_status: "provided" }, "library-file").body as { id: string; has_file: boolean };
+
+    expect(getCaptures("教程").captures).toHaveLength(1);
+    expect(fileCapture.has_file).toBe(true);
+    expect(getCaptureFile(fileCapture.id)).toMatchObject({ fileName: "sample.txt", mimeType: "text/plain" });
+    expect(getCaptureFile(fileCapture.id).content.toString()).toBe("preview body");
+    updateCapture(textCapture.id, { title: "受众访谈笔记", read_status: "read" }, "library-read");
+    expect(getCapture(textCapture.id)).toMatchObject({ read_status: "read", has_file: false });
+  });
+
+  it("keeps method versions immutable and links multiple materials to one action", () => {
+    const firstCapture = createCapture({ title: "事实材料", content: "事实 A" }, "method-capture-a").body as { id: string };
+    const secondCapture = createCapture({ title: "受众材料", content: "受众 B" }, "method-capture-b").body as { id: string };
+    const r1 = createMethod({ capture_id: firstCapture.id, title: "实践转内容", purpose: "依据事实形成内容角度", steps: ["核对事实", "确定受众"] }, "method-r1").body as { id: string; family_id: string };
+    const r2 = createMethod({ previous_method_id: r1.id, title: "实践转内容", purpose: "依据反馈调整内容角度", steps: ["核对事实", "读取反馈", "确定受众"] }, "method-r2").body as { id: string; previous_method_id: string; revision_number: number; family_id: string };
+    const trial = createTrial({ title: "第二轮内容", goal: "使用两份素材和指定方法版本", method_id: r2.id, capture_ids: [firstCapture.id, secondCapture.id] }, "multi-capture-trial").body as { id: string };
+
+    expect(r2).toMatchObject({ previous_method_id: r1.id, revision_number: 2, family_id: r1.family_id });
+    expect(getMethod(r1.id)).toMatchObject({ revision_number: 1, steps: ["核对事实", "确定受众"] });
+    expect(getMethods().methods).toHaveLength(2);
+    expect(getContext(trial.id)).toMatchObject({ method: { id: r2.id, revision_number: 2 }, captures: [{ id: firstCapture.id }, { id: secondCapture.id }] });
+    expect(getCapture(firstCapture.id)).toMatchObject({ used_count: 1, method_count: 1 });
+  });
+
+  it("backs up and restores uploaded material files with the database", async () => {
+    const capture = createCapture({ title: "备份文件", file_name: "evidence.txt", mime_type: "text/plain", file_data_base64: Buffer.from("recover me").toString("base64") }, "asset-backup").body as { id: string };
+    const backup = join(directory, "exports", "bundle.sqlite");
+    const report = await backupDatabase(backup);
+    const restoredDirectory = join(directory, "restored-with-assets");
+    const restored = await restoreDatabase(backup, restoredDirectory);
+
+    expect(report.assets).toBe(1);
+    expect(restored.assets).toBe(1);
+    const assetName = String((getDb().prepare("SELECT file_path FROM captures WHERE id=?").get(capture.id) as { file_path: string }).file_path).split(/[\\/]/).at(-1)!;
+    const restoredAsset = join(restoredDirectory, "assets", assetName);
+    expect(existsSync(restoredAsset)).toBe(true);
+    expect(readFileSync(restoredAsset, "utf8")).toBe("recover me");
   });
 });

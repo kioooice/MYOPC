@@ -4,8 +4,8 @@
 
 MYOPC 连接发现、个人积累、行动、成果和反馈，使下一次行动用上前一次的经验。Codex 承担主要规划、执行与分析，工作台提供持续可用的素材、方法、项目和成果视图。
 
-**当前状态：共享状态与接续基础已有实现；最新两项修复的代码复验通过，部署及完整网页重试待验。**
-**当前业务阶段：能力素材库与两轮真实内容生产。新增内容属于规划，尚未实现。**
+**当前状态：共享状态与接续基础及 R2/R5 修复已部署；能力素材库和方法版本的首个切片已实现，生产部署待本提交完成后进行。**
+**当前业务阶段：从多份素材和固定方法版本发起内容行动；Easel/H3 真实接入及两轮内容生产仍待现场条件。**
 
 ## 从这里接手
 
@@ -31,7 +31,7 @@ Easel 的参考实现见 [ZJU-REAL/Easel](https://github.com/ZJU-REAL/Easel)。�
 
 ## 已有使用基础
 
-已有行动、项目、成果版本、反馈、决策、共享接口、幂等、冲突保护及一致性备份。新增素材和生产联动的实际完成程度始终以 STATUS 为准。
+已有行动、项目、成果版本、反馈、决策、共享接口、幂等和冲突保护。能力页可保存链接、文本和不超过 2 MB 的私有文件，浏览/搜索/预览并标记读取状态；方法以不可变版本保存，可选多份素材与一个方法版本发起行动。SQLite 备份会在同名 `.assets` 目录包含素材文件。
 
 环境基线为 Node.js 24+、npm 11+。Windows 可使用 start.bat 或 start.ps1。手动开发可运行：
 
@@ -42,7 +42,16 @@ npm run dev
 
 使用 MYOPC_DATA_DIR 指定私有数据目录。共享服务连接通过私有配置提供 MYOPC_BASE_URL、MYOPC_USERNAME 和 MYOPC_PASSWORD；不将真实连接地址和凭据写入公开说明。
 
-通用客户端支持 context、start、draft、feedback、revise、decision，内容支持文件输入。写入用稳定的 --request-id，结果不确定时复用原请求编号和载荷；修订必须声明所基于的版本。具体已实现接口与示例见 scripts/continuity-client.ts 和应用路由；架构文档的候选接口不等于全部实现。
+通用客户端支持 context、start、draft、feedback、revise、decision，内容支持文件输入。写入用稳定的 --request-id，结果不确定时复用原请求编号和载荷；修订必须声明所基于的版本。能力接口示例：
+
+~~~sh
+curl http://127.0.0.1:3000/api/v1/library
+curl -X POST http://127.0.0.1:3000/api/v1/captures -H "content-type: application/json" -H "x-client-request-id: capture-001" -d '{"title":"一条想法","content":"先写下事实","kind":"text"}'
+curl -X POST http://127.0.0.1:3000/api/v1/methods -H "content-type: application/json" -H "x-client-request-id: method-001" -d '{"title":"实践转内容","purpose":"用事实形成内容角度","steps":["核对事实","确定受众"]}'
+curl -X POST http://127.0.0.1:3000/api/v1/trials -H "content-type: application/json" -H "x-client-request-id: action-001" -d '{"title":"内容行动","goal":"为目标受众解释事实","method_id":"<method_id>","capture_ids":["<capture_id>"]}'
+~~~
+
+具体已实现接口与示例见 `scripts/continuity-client.ts` 和应用路由；架构文档的候选接口不等于全部实现。
 
 ~~~sh
 npm test
@@ -50,7 +59,7 @@ npm run lint
 npm run build
 ~~~
 
-备份、校验、隔离恢复入口为 npm run db:backup、npm run db:verify、npm run db:restore，参数见 scripts/db-maintenance.ts。SQLite WAL 下不能只复制运行中的主数据库文件。多端通过同一共享业务服务读写，不把各端独立数据库当作自动同步。
+备份、校验、隔离恢复入口为 `npm run db:backup`、`npm run db:verify`、`npm run db:restore`，参数见 `scripts/db-maintenance.ts`。备份若包含素材文件，会同时创建 `<备份文件>.assets`；恢复时需保持该目录与数据库备份同名同目录。SQLite WAL 下不能只复制运行中的主数据库文件。多端通过同一共享业务服务读写，不把各端独立数据库当作自动同步。
 
 ## 真实性与范围
 
