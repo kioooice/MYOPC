@@ -5,8 +5,8 @@ import { getProjectProfile, parseProjectProfile, type ProjectProfile } from "./p
 
 type Json = Record<string, unknown>;
 type Stored = { status: number; body: Json };
-type HydratedVersion = Json & { id: string; ordinal: number; content: string; created_at: string; review_status?: string; feedback: Json[] };
-type HydratedDeliverable = Json & { id: string; title: string; type: string; created_at: string; review_status: string; versions: HydratedVersion[] };
+type HydratedVersion = Json & { id: string; ordinal: number; content: string; created_at: string; write_sequence: number; review_status?: string; feedback: Json[] };
+type HydratedDeliverable = Json & { id: string; title: string; type: string; created_at: string; write_sequence: number; review_status: string; versions: HydratedVersion[] };
 type HydratedTrial = Json & { id: string; title: string; goal: string; status: string; updated_at: string; code_commit?: string | null; next_step?: string | null; deliverables: HydratedDeliverable[]; decisions: Array<Json & { next_step?: string }> };
 
 export class BusinessError extends Error {
@@ -137,7 +137,8 @@ function latestDeliverableEntry(trials: HydratedTrial[]) {
     .sort((left, right) => {
       const leftTime = left.latestVersion?.created_at || left.deliverable.created_at;
       const rightTime = right.latestVersion?.created_at || right.deliverable.created_at;
-      return rightTime.localeCompare(leftTime) || String(right.deliverable.id).localeCompare(String(left.deliverable.id));
+      return rightTime.localeCompare(leftTime)
+        || Number(right.latestVersion?.write_sequence || right.deliverable.write_sequence) - Number(left.latestVersion?.write_sequence || left.deliverable.write_sequence);
     })[0] || null;
 }
 
@@ -347,9 +348,9 @@ function hydrateTrial(trial: Json): HydratedTrial {
   const capture = captureId ? db.prepare("SELECT * FROM captures WHERE id=?").get(captureId) as Json : null;
   const project = trial.project_id ? db.prepare("SELECT id,name,category,status FROM projects WHERE id=?").get(trial.project_id) as Json : null;
   const decisions = db.prepare("SELECT * FROM decisions WHERE trial_id=? ORDER BY created_at DESC").all(trial.id) as Array<Json & { next_step?: string }>;
-  const deliverables = db.prepare("SELECT * FROM deliverables WHERE trial_id=? ORDER BY created_at").all(trial.id) as Json[];
+  const deliverables = db.prepare("SELECT d.*, COALESCE((SELECT MAX(e.sequence) FROM events e WHERE e.entity_type='deliverable' AND e.entity_id=d.id AND e.kind='deliverable.created'), 0) AS write_sequence FROM deliverables d WHERE d.trial_id=? ORDER BY d.created_at, write_sequence").all(trial.id) as Json[];
   const nested = deliverables.map((deliverable) => {
-    const versions = db.prepare("SELECT * FROM deliverable_versions WHERE deliverable_id=? ORDER BY ordinal DESC").all(deliverable.id) as Json[];
+    const versions = db.prepare("SELECT v.*, COALESCE((SELECT MAX(e.sequence) FROM events e WHERE e.entity_type='deliverable_version' AND e.entity_id=v.id AND e.kind='version.created'), 0) AS write_sequence FROM deliverable_versions v WHERE v.deliverable_id=? ORDER BY v.ordinal DESC").all(deliverable.id) as Json[];
     const hydratedVersions = versions.map((version) => ({ ...version, handles_feedback_ids: JSON.parse(String(version.handles_feedback_json)), feedback: db.prepare("SELECT * FROM feedback WHERE version_id=? ORDER BY created_at").all(version.id) as Json[] })) as unknown as HydratedVersion[];
     return { ...deliverable, review_status: reviewStatus(deliverable, hydratedVersions), versions: hydratedVersions } as unknown as HydratedDeliverable;
   });

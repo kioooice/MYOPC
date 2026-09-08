@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FileText, Folder, GitBranch, Inbox, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Rocket, Search, Sparkles, X } from "lucide-react";
 import { PROJECT_CATEGORIES } from "@/lib/project-categories";
+import { assertPendingWriteCanSend, clearPendingWrite, loadPendingWrite, storePendingWrite, type PendingWrite } from "@/lib/pending-write";
 
 type Feedback = { id: string; content: string; status: string; source?: string; kind?: string; handled_at?: string | null };
 type Version = { id: string; ordinal: number; content: string; created_at?: string; review_status?: string; feedback: Feedback[]; handles_feedback_ids: string[] };
@@ -14,7 +15,7 @@ type ProjectLocation = { id: string; label: string; environment: string; reposit
 type ProjectFeedback = Feedback & { trial_id: string; trial_title: string; version_id: string; version_ordinal: number };
 type ProjectPendingReview = { id: string; trial_id: string; trial_title: string; deliverable_id: string; deliverable_title: string; version_ordinal: number; content: string };
 type Project = { id: string; name: string; category: string; status: string; description: string | null; created_at: string; updated_at: string; profile: ProjectProfile | null; locations: ProjectLocation[]; trial_count: number; open_feedback_count: number; pending_review_count: number; pending_reviews: ProjectPendingReview[]; open_feedback: ProjectFeedback[]; latest_trial: { id: string; title: string; goal: string; status: string; updated_at: string; code_commit?: string | null } | null; latest_deliverable: { id: string; trial_id: string; trial_title?: string; title: string; type: string; version: number | null; review_status?: string; content?: string | null; updated_at: string } | null; next_step: string | null };
-type WriteRequest = { path: string; body: Record<string, unknown>; requestId: string; label: string };
+type WriteRequest = PendingWrite;
 type ProjectCategory = (typeof PROJECT_CATEGORIES)[number];
 type View = "overview" | "projects" | "active" | "inbox" | "deliverables";
 
@@ -41,6 +42,7 @@ export default function Home() {
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [latestEventSequence, setLatestEventSequence] = useState(0);
   const [pendingWrite, setPendingWrite] = useState<WriteRequest | null>(null);
+  const pendingWriteRef = useRef<WriteRequest | null>(null);
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -69,11 +71,14 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const restored = loadPendingWrite(window.sessionStorage);
+    if (restored) pendingWriteRef.current = restored;
+    const restore = restored ? window.setTimeout(() => { setPendingWrite(restored); }, 0) : null;
     const initial = window.setTimeout(() => { void load(); }, 0);
     const timer = window.setInterval(() => { if (document.visibilityState === "visible") void load(true); }, 15000);
     const onFocus = () => { if (document.visibilityState === "visible") void load(true); };
     window.addEventListener("focus", onFocus);
-    return () => { window.clearTimeout(initial); window.clearInterval(timer); window.removeEventListener("focus", onFocus); };
+    return () => { if (restore !== null) window.clearTimeout(restore); window.clearTimeout(initial); window.clearInterval(timer); window.removeEventListener("focus", onFocus); };
   }, [load]);
 
   const trial = trials.find((item) => item.id === selected);
@@ -89,18 +94,23 @@ export default function Home() {
   function openProject(id: string) { setSelected(""); setSelectedProject(id); setView("projects"); }
 
   async function sendWrite(request: WriteRequest) {
+    const existing = pendingWriteRef.current;
+    assertPendingWriteCanSend(existing, request);
+    pendingWriteRef.current = request;
     setPendingWrite(request);
-    try {
-      const response = await fetch(request.path, { method: "POST", headers: { "content-type": "application/json", "x-client-request-id": request.requestId }, body: JSON.stringify(request.body) });
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.message || `${request.label}失败`);
-      }
+    storePendingWrite(window.sessionStorage, request);
+    const response = await fetch(request.path, { method: "POST", headers: { "content-type": "application/json", "x-client-request-id": request.requestId }, body: JSON.stringify(request.body) });
+    const result = await response.json();
+    if (!response.ok) {
+      pendingWriteRef.current = null;
       setPendingWrite(null);
-      return result;
-    } catch (cause) {
-      throw cause;
+      clearPendingWrite(window.sessionStorage);
+      throw new Error(result.message || `${request.label}失败`);
     }
+    pendingWriteRef.current = null;
+    setPendingWrite(null);
+    clearPendingWrite(window.sessionStorage);
+    return result;
   }
 
   async function retryWrite() {
@@ -181,7 +191,8 @@ export default function Home() {
     <section className="main-panel">
       <header className="main-header"><button className="icon-button menu-button" onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}>{sidebarOpen ? <Menu size={19} /> : <PanelLeftOpen size={19} />}</button><div className="breadcrumb"><span>工作台</span>{trial && <><ChevronLeft size={13} className="crumb-arrow" /><strong>{trial.title}</strong></>}{project && !trial && <><ChevronLeft size={13} className="crumb-arrow" /><strong>{project.name}</strong></>}</div><div className="header-sync"><span title={latestEventSequence ? `服务器事件 ${latestEventSequence}` : undefined}>{lastSyncedAt ? `已同步 ${shortTime(lastSyncedAt.toISOString())}` : "等待同步"}</span><button className="icon-button" onClick={() => void load()} disabled={refreshing} title="刷新共享状态" aria-label="刷新共享状态"><RefreshCw size={15} className={refreshing ? "spin" : ""} /></button></div></header>
       <div className="content">
-        {error && <div className="error-banner"><CircleAlert size={16} /><span>{error}</span>{pendingWrite ? <button className="retry-button" onClick={() => void retryWrite()} disabled={busy}>重试上次写入</button> : <button className="retry-button" onClick={() => void load()}>重新连接</button>}<button onClick={() => setError("")} aria-label="关闭提示"><X size={16} /></button></div>}
+        {pendingWrite && <div className="pending-write-banner"><CircleAlert size={16} /><span><strong>{pendingWrite.label}尚未确认</strong><small>请求已保留；读取成功不代表写入响应已确认。</small></span><button className="retry-button" onClick={() => void retryWrite()} disabled={busy}>重试原请求</button></div>}
+        {error && <div className="error-banner"><CircleAlert size={16} /><span>{error}</span>{!pendingWrite && <button className="retry-button" onClick={() => void load()}>重新连接</button>}<button onClick={() => setError("")} aria-label="关闭提示"><X size={16} /></button></div>}
         {loading && <div className="loading-state">正在读取共享工作状态…</div>}
         {!loading && !trial && view === "overview" && <OverviewView trials={trials} pendingReviewCount={pendingReviewCount} onOpen={openTrial} onNavigate={(nextView) => { setView(nextView); setSelected(""); setSelectedProject(""); }} />}
         {!loading && !trial && view === "projects" && project && <ProjectDetailView project={project} category={projectCategories.find((item) => item.id === project.category)} onBack={() => setSelectedProject("")} onOpenTrial={openTrial} />}

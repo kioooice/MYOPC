@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { backupDatabase, restoreDatabase } from "../lib/backup";
 import { BusinessError, acceptVersion, createCapture, createDecision, createDraft, createFeedback, createProject, createProjectLocation, createTrial, createVersion, getContext, getProject, getProjects, startTrial, updateProject, updateTrial } from "../lib/business";
-import { closeDbForTests } from "../lib/db";
+import { closeDbForTests, getDb } from "../lib/db";
 
 let directory: string;
 beforeEach(() => { directory = mkdtempSync(join(tmpdir(), "myopc-test-")); process.env.MYOPC_DATA_DIR = directory; });
@@ -115,6 +115,38 @@ describe("S0 business invariants", () => {
     expect(latest.trials.find((trial) => trial.id === secondTrial.id)).toBeTruthy();
     const detail = getContext(String(firstTrial.id));
     expect(detail.deliverables.find((deliverable) => deliverable.id === secondDraft.id)).toMatchObject({ review_status: "pending_review" });
+  });
+
+  it("uses event sequence when deliverables across actions share the same millisecond", () => {
+    const project = createProject({ name: "同毫秒项目", category: "tool" }, "same-ms-project").body as { id: string };
+    const firstTrial = startTrial({ kind: "need", title: "先写行动", content: "先写", project_id: project.id }, "same-ms-start-1").body;
+    const secondTrial = startTrial({ kind: "need", title: "后写行动", content: "后写", project_id: project.id }, "same-ms-start-2").body;
+    const timestamp = "2026-09-08T12:00:00.000Z";
+    const db = getDb();
+
+    db.prepare("INSERT INTO deliverables(id,trial_id,title,type,accepted_version_id,created_at) VALUES (?,?,?,?,?,?)").run("z-older-deliverable", firstTrial.id, "先写成果", "document", null, timestamp);
+    db.prepare("INSERT INTO deliverable_versions(id,deliverable_id,ordinal,content,previous_version_id,handles_feedback_json,review_status,created_at) VALUES (?,?,?,?,?,?,?,?)").run("z-older-version", "z-older-deliverable", 1, "先写内容", null, "[]", "pending_review", timestamp);
+    db.prepare("INSERT INTO events(entity_type,entity_id,kind,payload_json,created_at) VALUES (?,?,?,?,?)").run("deliverable", "z-older-deliverable", "deliverable.created", "{}", timestamp);
+    db.prepare("INSERT INTO events(entity_type,entity_id,kind,payload_json,created_at) VALUES (?,?,?,?,?)").run("deliverable_version", "z-older-version", "version.created", "{}", timestamp);
+    db.prepare("INSERT INTO deliverables(id,trial_id,title,type,accepted_version_id,created_at) VALUES (?,?,?,?,?,?)").run("a-newer-deliverable", secondTrial.id, "后写成果", "document", null, timestamp);
+    db.prepare("INSERT INTO deliverable_versions(id,deliverable_id,ordinal,content,previous_version_id,handles_feedback_json,review_status,created_at) VALUES (?,?,?,?,?,?,?,?)").run("a-newer-version", "a-newer-deliverable", 1, "后写内容", null, "[]", "pending_review", timestamp);
+    db.prepare("INSERT INTO events(entity_type,entity_id,kind,payload_json,created_at) VALUES (?,?,?,?,?)").run("deliverable", "a-newer-deliverable", "deliverable.created", "{}", timestamp);
+    db.prepare("INSERT INTO events(entity_type,entity_id,kind,payload_json,created_at) VALUES (?,?,?,?,?)").run("deliverable_version", "a-newer-version", "version.created", "{}", timestamp);
+
+    expect(getProject(project.id).latest_deliverable).toMatchObject({ id: "a-newer-deliverable", trial_id: secondTrial.id, latest_version: { id: "a-newer-version" } });
+    expect(getProjects().projects[0].latest_deliverable).toMatchObject({ id: "a-newer-deliverable", trial_id: secondTrial.id });
+  });
+
+  it("idempotently replays a committed draft after its response is lost and state is read", () => {
+    const trial = startTrial({ kind: "need", title: "响应丢失", content: "验证网页恢复" }, "lost-response-start").body;
+    const payload = { trial_id: trial.id, title: "只应保存一次", content: "原始请求内容" };
+    const committed = createDraft(payload, "lost-response-draft").body as { id: string; version: { id: string } };
+
+    expect(getContext(String(trial.id)).deliverables).toHaveLength(1);
+    const replayed = createDraft(payload, "lost-response-draft").body as { id: string; version: { id: string } };
+
+    expect(replayed).toMatchObject({ id: committed.id, version: { id: committed.version.id } });
+    expect(getContext(String(trial.id)).deliverables).toHaveLength(1);
   });
 
   it("uses the latest decision as the shared next step", () => {
