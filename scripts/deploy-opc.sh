@@ -35,6 +35,9 @@ log "target_commit=$target_commit"
 
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 backup_path="$BACKUP_DIR/myopc-${timestamp}-${previous_commit}.sqlite"
+# A fresh clone has no local tsx yet; prepare the maintenance tool without
+# restarting the running service before taking the consistency backup.
+[[ -x node_modules/.bin/tsx ]] || run npm ci --include=dev
 run env MYOPC_DATA_DIR="$DATA_DIR" npm run db:backup -- --output "$backup_path"
 run env MYOPC_DATA_DIR="$DATA_DIR" npm run db:verify -- --file "$backup_path"
 
