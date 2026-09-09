@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { acceptVersion, BusinessError, createCapture, createDecision, createDeliverable, createDraft, createFeedback, createMethod, createProject, createProjectLocation, createTrial, createVersion, getCapture, getCaptureFile, getCaptures, getContext, getDashboard, getEvents, getMethod, getMethods, getProject, getProjects, getLibrary, startTrial, updateCapture, updateProject, updateTrial } from "@/lib/business";
+import { acceptVersion, BusinessError, createCapture, createDecision, createDeliverable, createDraft, createFeedback, createMethod, createProject, createProjectLocation, createTrial, createVersion, getAssets, getCapture, getCaptureFile, getCaptures, getContext, getDashboard, getEvents, getMethod, getMethods, getProject, getProjects, getLibrary, startTrial, updateCapture, updateProject, updateTrial } from "@/lib/business";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +23,7 @@ export async function GET(request: NextRequest, context: Context) {
     if (segments[0] === "health") return NextResponse.json({ status: "ok", persistence: "sqlite", release: process.env.MYOPC_RELEASE || "unknown" });
     if (segments[0] === "dashboard") return NextResponse.json(getDashboard());
     if (segments[0] === "library") return NextResponse.json(getLibrary(request.nextUrl.searchParams.get("q") || ""));
+    if (segments[0] === "assets") return NextResponse.json(getAssets(request.nextUrl.searchParams.get("q") || ""));
     if (segments[0] === "captures" && segments[1] && segments[2] === "file") {
       const file = getCaptureFile(segments[1]);
       return new NextResponse(new Uint8Array(file.content), { headers: { "content-type": file.mimeType, "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}` } });

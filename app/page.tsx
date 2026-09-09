@@ -17,6 +17,8 @@ type ProjectPendingReview = { id: string; trial_id: string; trial_title: string;
 type Project = { id: string; name: string; category: string; status: string; description: string | null; created_at: string; updated_at: string; profile: ProjectProfile | null; locations: ProjectLocation[]; trial_count: number; open_feedback_count: number; pending_review_count: number; pending_reviews: ProjectPendingReview[]; open_feedback: ProjectFeedback[]; latest_trial: { id: string; title: string; goal: string; status: string; updated_at: string; code_commit?: string | null } | null; latest_deliverable: { id: string; trial_id: string; trial_title?: string; title: string; type: string; version: number | null; review_status?: string; content?: string | null; updated_at: string } | null; next_step: string | null };
 type Capture = { id: string; kind: string; title: string; content?: string | null; source?: string | null; read_status: string; file_name?: string | null; mime_type?: string | null; file_size?: number | null; has_file?: boolean; used_count?: number; method_count?: number; created_at: string };
 type Method = { id: string; title: string; purpose: string; revision_label: string; steps: string[]; conditions?: string | null; family_id?: string | null; previous_method_id?: string | null; revision_number: number; created_at: string; usage_count?: number; captures?: Capture[] };
+type Tool = { id: string; name: string; type: string; status: string; purpose: string; usage?: string | null; location?: string | null; source_url?: string | null; verification: string; notes?: string | null; projects: Array<{ id: string; name: string }> };
+type SpaceEntry = { id: string; title: string; type: string; content: string; source_url?: string | null; verification?: string | null; projects: Array<{ id: string; name: string }>; tools: Array<{ id: string; name: string }> };
 type WriteRequest = PendingWrite;
 type ProjectCategory = (typeof PROJECT_CATEGORIES)[number];
 type View = "overview" | "projects" | "toolbox" | "space" | "active" | "inbox" | "deliverables" | "library";
@@ -33,6 +35,8 @@ export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [captures, setCaptures] = useState<Capture[]>([]);
   const [methods, setMethods] = useState<Method[]>([]);
+  const [tools, setTools] = useState<Tool[]>([]);
+  const [spaceEntries, setSpaceEntries] = useState<SpaceEntry[]>([]);
   const [projectCategories, setProjectCategories] = useState<ProjectCategory[]>([]);
   const [selected, setSelected] = useState("");
   const [selectedProject, setSelectedProject] = useState("");
@@ -52,18 +56,21 @@ export default function Home() {
     if (!quiet) setLoading(true);
     setRefreshing(true);
     try {
-      const [dashboardResponse, projectsResponse, libraryResponse] = await Promise.all([
+      const [dashboardResponse, projectsResponse, libraryResponse, assetsResponse] = await Promise.all([
         fetch("/api/v1/dashboard", { cache: "no-store" }),
         fetch("/api/v1/projects", { cache: "no-store" }),
         fetch("/api/v1/library", { cache: "no-store" }),
+        fetch("/api/v1/assets", { cache: "no-store" }),
       ]);
-      if (!dashboardResponse.ok || !projectsResponse.ok || !libraryResponse.ok) throw new Error("读取工作台失败，请检查连接后重试");
-      const [data, projectData, libraryData] = await Promise.all([dashboardResponse.json(), projectsResponse.json(), libraryResponse.json()]);
+      if (!dashboardResponse.ok || !projectsResponse.ok || !libraryResponse.ok || !assetsResponse.ok) throw new Error("读取工作台失败，请检查连接后重试");
+      const [data, projectData, libraryData, assetsData] = await Promise.all([dashboardResponse.json(), projectsResponse.json(), libraryResponse.json(), assetsResponse.json()]);
       setTrials(data.trials);
       setProjects(projectData.projects);
       setProjectCategories(projectData.categories);
       setCaptures(libraryData.captures || []);
       setMethods(libraryData.methods || []);
+      setTools(assetsData.tools || []);
+      setSpaceEntries(assetsData.space_entries || []);
       setLatestEventSequence(data.latest_event_sequence || 0);
       setLastSyncedAt(new Date());
       setError("");
@@ -178,8 +185,8 @@ export default function Home() {
         <button className={view === "overview" && !selected ? "nav-item active" : "nav-item"} onClick={() => { setView("overview"); setSelected(""); setSelectedProject(""); }}><Sparkles size={17} /><span>总览</span></button>
         <div className="nav-divider" />
         <button className={view === "projects" && !selected ? "nav-item active" : "nav-item"} onClick={() => { setView("projects"); setSelected(""); setSelectedProject(""); }}><Folder size={17} /><span>项目</span>{Boolean(projects.length) && <b>{projects.length}</b>}</button>
-        <button className={view === "toolbox" ? "nav-item active" : "nav-item"} onClick={() => openLibrary("toolbox")}><Rocket size={17} /><span>工具</span>{captures.filter((item) => ["tool", "software", "open_source", "model", "api", "cli", "skill", "workflow", "service"].includes(item.kind)).length > 0 && <b>{captures.filter((item) => ["tool", "software", "open_source", "model", "api", "cli", "skill", "workflow", "service"].includes(item.kind)).length}</b>}</button>
-        <button className={view === "space" ? "nav-item active" : "nav-item"} onClick={() => openLibrary("space")}><BookOpen size={17} /><span>空间</span>{methods.length > 0 && <b>{methods.length}</b>}</button>
+        <button className={view === "toolbox" ? "nav-item active" : "nav-item"} onClick={() => openLibrary("toolbox")}><Rocket size={17} /><span>工具</span>{tools.length > 0 && <b>{tools.length}</b>}</button>
+        <button className={view === "space" ? "nav-item active" : "nav-item"} onClick={() => openLibrary("space")}><BookOpen size={17} /><span>空间</span>{spaceEntries.length > 0 && <b>{spaceEntries.length}</b>}</button>
       </nav>
       <div className="sidebar-section"><div className="section-label"><span>最近行动</span>{trials.length > 0 && <small>{trials.length}</small>}</div>
         {trials.length > 4 && <label className="search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索" /></label>}
@@ -194,13 +201,13 @@ export default function Home() {
         {pendingWrite && <div className="pending-write-banner"><CircleAlert size={16} /><span><strong>{pendingWrite.label}尚未确认</strong><small>请求已保留；读取成功不代表写入响应已确认。</small></span><button className="retry-button" onClick={() => void retryWrite()} disabled={busy}>重试原请求</button></div>}
         {error && <div className="error-banner"><CircleAlert size={16} /><span>{error}</span>{!pendingWrite && <button className="retry-button" onClick={() => void load()}>重新连接</button>}<button onClick={() => setError("")} aria-label="关闭提示"><X size={16} /></button></div>}
         {loading && <div className="loading-state">正在读取共享工作状态…</div>}
-        {!loading && !trial && view === "overview" && <OverviewView trials={trials} projects={projects} captures={captures} methods={methods} onOpen={openTrial} onNavigate={(nextView) => { setView(nextView); setSelected(""); setSelectedProject(""); }} />}
+        {!loading && !trial && view === "overview" && <OverviewView trials={trials} projects={projects} tools={tools} spaceEntries={spaceEntries} onOpen={openTrial} onNavigate={(nextView) => { setView(nextView); setSelected(""); setSelectedProject(""); }} />}
         {!loading && !trial && view === "projects" && project && <ProjectDetailView project={project} category={projectCategories.find((item) => item.id === project.category)} onBack={() => setSelectedProject("")} onOpenTrial={openTrial} />}
         {!loading && !trial && view === "projects" && !project && <ProjectsView projects={projects} categories={projectCategories} onOpen={openProject} />}
         {!loading && !trial && view === "active" && <ListView title="进行中的行动" subtitle="从这里继续目标、产物和反馈；审阅中的行动也保留在这里。" trials={activeTrials} onOpen={openTrial} empty="还没有进行中的行动" />}
         {!loading && !trial && view === "inbox" && <InboxView trials={trials} onOpen={openTrial} />}
         {!loading && !trial && view === "deliverables" && <DeliverablesView trials={trials} onOpen={openTrial} />}
-        {!loading && !trial && (view === "toolbox" || view === "space" || view === "library") && <LibraryView section={view === "space" ? "space" : "toolbox"} captures={captures} methods={methods} projects={projects} busy={busy} onWrite={sendWrite} onReload={() => load(true)} />}
+        {!loading && !trial && (view === "toolbox" || view === "space" || view === "library") && <AssetsView section={view === "space" ? "space" : "toolbox"} tools={tools} spaceEntries={spaceEntries} />}
         {trial && <TrialWorkspace trial={trial} busy={busy} onFeedback={addFeedback} onAccept={accept} onDraft={createDraft} />}
       </div>
     </section>
@@ -248,10 +255,11 @@ function ProjectDetailView({ project, category, onBack, onOpenTrial }: { project
   </div>;
 }
 
-function OverviewView({ trials, projects, captures, methods, onOpen, onNavigate }: { trials: Trial[]; projects: Project[]; captures: Capture[]; methods: Method[]; onOpen: (id: string) => void; onNavigate: (view: View) => void }) {
+function OverviewView({ trials, projects, tools, spaceEntries, onOpen, onNavigate }: { trials: Trial[]; projects: Project[]; tools: Tool[]; spaceEntries: SpaceEntry[]; onOpen: (id: string) => void; onNavigate: (view: View) => void }) {
   const activeProjects = projects.filter((item) => item.status === "active" || item.status === "in_progress").slice(0, 3);
   const recentTrials = trials.slice(0, 3);
-  const toolCount = captures.filter((item) => ["tool", "software", "open_source", "model", "api", "cli", "skill", "workflow", "service"].includes(item.kind)).length;
+  const toolCount = tools.length;
+  const methods = spaceEntries.map((entry) => ({ id: entry.id, title: entry.title, purpose: entry.content, revision_label: entry.type }));
   return <div className="overview-view"><section className="overview-hero"><div className="overview-intro"><span className="eyebrow">个人资产空间</span><h1>我在做什么、能用什么、留下了什么</h1><p>Projects 记录当前项目，Toolbox 保存真正可调用的工具，Space 沉淀经过实践的知识。</p></div><div className="codex-note"><span><Sparkles size={18} /></span><div><strong>轻量连接</strong><small>项目、工具与知识各自归位</small></div></div></section><div className="overview-stats"><button onClick={() => onNavigate("projects")}><span>正在进行的项目</span><strong>{activeProjects.length}</strong><small>查看 Projects <ChevronRight size={13} /></small></button><button onClick={() => onNavigate("toolbox")}><span>可调用工具</span><strong>{toolCount}</strong><small>查看 Toolbox <ChevronRight size={13} /></small></button><button onClick={() => onNavigate("space")}><span>知识与方法</span><strong>{methods.length}</strong><small>查看 Space <ChevronRight size={13} /></small></button></div><section className="overview-section"><div className="overview-section-head"><div><span className="eyebrow">Projects</span><h2>最近在做什么</h2></div><button className="text-button" onClick={() => onNavigate("projects")}>查看全部 <ChevronRight size={14} /></button></div>{activeProjects.length === 0 ? <div className="overview-empty"><span className="overview-empty-icon"><Folder size={22} /></span><h2>还没有进行中的项目</h2><p>先在 Projects 中登记一个项目，再从项目详情跟踪当前状态。</p></div> : <div className="overview-trials">{activeProjects.map((item) => <button className="overview-trial" key={item.id} onClick={() => onNavigate("projects")}><span className="overview-trial-icon"><Folder size={16} /></span><span className="overview-trial-copy"><strong>{item.name}</strong><small>{item.description || "尚未补充项目定位"}</small></span><span className="overview-trial-status">{statusLabel(item.status)}</span><ChevronRight size={15} /></button>)}</div>}</section><section className="overview-section"><div className="overview-section-head"><div><span className="eyebrow">最近沉淀</span><h2>从行动中留下的东西</h2></div><button className="text-button" onClick={() => onNavigate("space")}>打开 Space <ChevronRight size={14} /></button></div>{methods.length === 0 ? <div className="quiet-empty"><BookOpen size={22} /><p>还没有 Space 内容</p></div> : <div className="overview-trials">{methods.slice(0, 3).map((item) => <button className="overview-trial" key={item.id} onClick={() => onNavigate("space")}><span className="overview-trial-icon"><BookOpen size={16} /></span><span className="overview-trial-copy"><strong>{item.title}</strong><small>{item.purpose}</small></span><span className="overview-trial-status">{item.revision_label}</span><ChevronRight size={15} /></button>)}</div>}</section>{recentTrials.length > 0 && <p className="overview-footnote">最近行动仍保留在项目详情和历史记录中，共 {recentTrials.length} 条最近记录。</p>}</div>;
 }
 
@@ -272,6 +280,10 @@ function InboxView({ trials, onOpen }: { trials: Trial[]; onOpen: (id: string) =
 function DeliverablesView({ trials, onOpen }: { trials: Trial[]; onOpen: (id: string) => void }) {
   const rows = trials.flatMap((trial) => trial.deliverables.map((deliverable) => ({ trial, deliverable })));
   return <div className="list-view"><div className="view-title"><h1>成果</h1><p>所有稿件、视频和工具版本。</p></div>{rows.length === 0 ? <div className="quiet-empty"><FileText size={22} /><p>还没有成果</p></div> : <div className="rows">{rows.map(({ trial, deliverable }) => <button key={deliverable.id} onClick={() => onOpen(trial.id)}><span className="row-icon"><FileText size={16} /></span><span><strong>{deliverable.title}</strong><small>{trial.title} · {deliverable.versions.length} 个版本</small></span><b>{reviewStatusLabel(deliverable.review_status)}</b></button>)}</div>}</div>;
+}
+
+function AssetsView({ section, tools, spaceEntries }: { section: "toolbox" | "space"; tools: Tool[]; spaceEntries: SpaceEntry[] }) {
+  return <div className="asset-view"><div className="view-title"><span className="eyebrow">{section === "toolbox" ? "Toolbox" : "Space"}</span><h1>{section === "toolbox" ? "真正可以调用的工具" : "经过实践留下的知识"}</h1><p>{section === "toolbox" ? "这里只保存已经拥有、配置、尝试或验证过的能力。状态与证据分开显示。" : "这里保存自己的方法、经验与判断；外部文章和收藏仍留在 Karakeep。"}</p></div>{section === "toolbox" ? <div className="asset-grid">{tools.map((tool) => <article className="asset-card" key={tool.id}><div className="asset-card-head"><span>{tool.type}</span><b>{tool.status}</b></div><h2>{tool.name}</h2><p>{tool.purpose}</p><dl><div><dt>位置</dt><dd>{tool.location || "未登记"}</dd></div><div><dt>验证</dt><dd>{tool.verification}</dd></div>{tool.projects.length > 0 && <div><dt>相关项目</dt><dd>{tool.projects.map((item) => item.name).join("、")}</dd></div>}</dl>{tool.source_url && <a href={tool.source_url} target="_blank" rel="noreferrer">打开入口 <ExternalLink size={12} /></a>}</article>)}</div> : <div className="asset-grid">{spaceEntries.map((entry) => <article className="asset-card space-card" key={entry.id}><div className="asset-card-head"><span>{entry.type}</span><b>{entry.verification || "待继续验证"}</b></div><h2>{entry.title}</h2><p>{entry.content}</p>{(entry.projects.length > 0 || entry.tools.length > 0) && <dl>{entry.projects.length > 0 && <div><dt>相关项目</dt><dd>{entry.projects.map((item) => item.name).join("、")}</dd></div>}{entry.tools.length > 0 && <div><dt>相关工具</dt><dd>{entry.tools.map((item) => item.name).join("、")}</dd></div>}</dl>}</article>)}</div>}</div>;
 }
 
 function LibraryView({ section, captures, methods, projects, busy, onWrite, onReload }: { section: "toolbox" | "space"; captures: Capture[]; methods: Method[]; projects: Project[]; busy: boolean; onWrite: (request: WriteRequest) => Promise<unknown>; onReload: () => void }) {

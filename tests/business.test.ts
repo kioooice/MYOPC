@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { backupDatabase, restoreDatabase } from "../lib/backup";
-import { BusinessError, acceptVersion, createCapture, createDecision, createDraft, createFeedback, createMethod, createProject, createProjectLocation, createTrial, createVersion, getCapture, getCaptureFile, getCaptures, getContext, getMethod, getMethods, getProject, getProjects, startTrial, updateCapture, updateProject, updateTrial } from "../lib/business";
+import { BusinessError, acceptVersion, createCapture, createDecision, createDraft, createFeedback, createMethod, createProject, createProjectLocation, createTrial, createVersion, getAssets, getCapture, getCaptureFile, getCaptures, getContext, getMethod, getMethods, getProject, getProjects, startTrial, updateCapture, updateProject, updateTrial } from "../lib/business";
 import { closeDbForTests, getDb } from "../lib/db";
 
 let directory: string;
@@ -115,6 +115,16 @@ describe("S0 business invariants", () => {
     expect(latest.trials.find((trial) => trial.id === secondTrial.id)).toBeTruthy();
     const detail = getContext(String(firstTrial.id));
     expect(detail.deliverables.find((deliverable) => deliverable.id === secondDraft.id)).toMatchObject({ review_status: "pending_review" });
+  });
+
+  it("reads independent tool and space assets with their project links", () => {
+    const db = getDb();
+    const project = createProject({ name: "资产项目", category: "tool" }, "asset-project").body as { id: string };
+    db.prepare("INSERT INTO tools(id,name,type,status,purpose,verification,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)").run("tool-1", "真实工具", "CLI", "已验证", "执行任务", "已运行", "now", "now");
+    db.prepare("INSERT INTO space_entries(id,title,type,content,verification,created_at,updated_at) VALUES (?,?,?,?,?,?,?)").run("space-1", "真实经验", "经验", "经过实践形成", "有证据", "now", "now");
+    db.prepare("INSERT INTO project_tools(project_id,tool_id) VALUES (?,?)").run(project.id, "tool-1");
+    db.prepare("INSERT INTO project_space_entries(project_id,space_entry_id) VALUES (?,?)").run(project.id, "space-1");
+    expect(getAssets()).toMatchObject({ tools: [{ name: "真实工具", projects: [{ name: "资产项目" }] }], space_entries: [{ title: "真实经验", projects: [{ name: "资产项目" }] }] });
   });
 
   it("uses event sequence when deliverables across actions share the same millisecond", () => {

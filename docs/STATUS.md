@@ -15,6 +15,10 @@
 
 已验证：`npm test`（18 项通过）、`npm run lint`、`npm run build`，本地开发服务器 `http://127.0.0.1:3000` 可打开，首页显示三块新导航；服务器提交、容器发布标记与本地/GitHub 一致，服务器入口返回 HTTP 200。真实用户数据未做迁移，沿用原 SQLite 数据目录。
 
+随后补齐了资产内容与独立模型：新增 `tools`、`space_entries` 以及 Project/Tool/Space 三类关联表，并提供 `/api/v1/assets`。根据 GitHub、本机和服务器现场核查，幂等写入 MYOPC、Project Observer、Helm、ScholarScope、Knowledge Engine、Enterprise Agent 六个项目；写入 Project Observer、Easel、Karakeep、AutoDL、H3、GitHub、Codex 和私人云部署工作流八项 Toolbox 资产；写入三条部署与产品边界 Space 资产。AutoDL/H3 未伪称已验证，保留“尝试中/待核对”状态。
+
+补充后验证：`npm test`（19 项通过）、`npm run lint`、`npm run build`；本地 `/api/v1/assets` 返回 8 个工具和 3 条 Space 内容，`/api/v1/projects` 返回 6 个核实项目。旧表与已有数据不删除，新种子使用稳定 ID 和 `INSERT OR IGNORE` 避免重复。
+
 ## 仓库已有实现
 
 - Next.js / React / TypeScript Web 应用，SQLite 持久化。

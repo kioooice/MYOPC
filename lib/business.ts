@@ -267,6 +267,20 @@ export function getLibrary(query = "") {
   return { ...getCaptures(query), ...getMethods(query) };
 }
 
+export function getAssets(query = "") {
+  const db = getDb();
+  const normalizedQuery = text(query).toLowerCase();
+  const tools = db.prepare(`SELECT t.*,
+    (SELECT json_group_array(json_object('id',p.id,'name',p.name)) FROM projects p JOIN project_tools pt ON pt.project_id=p.id WHERE pt.tool_id=t.id) AS projects_json
+    FROM tools t WHERE (?='' OR lower(t.name || ' ' || t.purpose || ' ' || COALESCE(t.notes,'')) LIKE '%' || ? || '%') ORDER BY t.updated_at DESC, t.name`).all(normalizedQuery, normalizedQuery) as Json[];
+  const spaceEntries = db.prepare(`SELECT s.*,
+    (SELECT json_group_array(json_object('id',p.id,'name',p.name)) FROM projects p JOIN project_space_entries ps ON ps.project_id=p.id WHERE ps.space_entry_id=s.id) AS projects_json,
+    (SELECT json_group_array(json_object('id',t.id,'name',t.name)) FROM tools t JOIN tool_space_entries ts ON ts.tool_id=t.id WHERE ts.space_entry_id=s.id) AS tools_json
+    FROM space_entries s WHERE (?='' OR lower(s.title || ' ' || s.content) LIKE '%' || ? || '%') ORDER BY s.updated_at DESC, s.title`).all(normalizedQuery, normalizedQuery) as Json[];
+  const parseLinks = (row: Json) => ({ ...row, projects: JSON.parse(String(row.projects_json || "[]")), tools: JSON.parse(String(row.tools_json || "[]")), projects_json: undefined, tools_json: undefined });
+  return { tools: tools.map(parseLinks), space_entries: spaceEntries.map(parseLinks), query: normalizedQuery };
+}
+
 export function createTrial(payload: Json, requestId?: string) {
   return idempotent("POST /trials", requestId, payload, () => {
     const db = getDb();

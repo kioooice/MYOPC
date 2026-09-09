@@ -70,6 +70,30 @@ CREATE TABLE IF NOT EXISTS decisions (
   adjustment TEXT NOT NULL, next_step TEXT NOT NULL,
   execution_status TEXT NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS tools (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, type TEXT NOT NULL, status TEXT NOT NULL,
+  purpose TEXT NOT NULL, usage TEXT, location TEXT, source_url TEXT,
+  verification TEXT NOT NULL, notes TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS space_entries (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL UNIQUE, type TEXT NOT NULL, content TEXT NOT NULL,
+  source_url TEXT, verification TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS project_tools (
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  tool_id TEXT NOT NULL REFERENCES tools(id) ON DELETE CASCADE,
+  PRIMARY KEY (project_id, tool_id)
+);
+CREATE TABLE IF NOT EXISTS project_space_entries (
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  space_entry_id TEXT NOT NULL REFERENCES space_entries(id) ON DELETE CASCADE,
+  PRIMARY KEY (project_id, space_entry_id)
+);
+CREATE TABLE IF NOT EXISTS tool_space_entries (
+  tool_id TEXT NOT NULL REFERENCES tools(id) ON DELETE CASCADE,
+  space_entry_id TEXT NOT NULL REFERENCES space_entries(id) ON DELETE CASCADE,
+  PRIMARY KEY (tool_id, space_entry_id)
+);
 CREATE TABLE IF NOT EXISTS trial_captures (
   trial_id TEXT NOT NULL REFERENCES trials(id) ON DELETE CASCADE,
   capture_id TEXT NOT NULL REFERENCES captures(id),
@@ -93,6 +117,32 @@ CREATE INDEX IF NOT EXISTS idx_project_locations_project ON project_locations(pr
 CREATE INDEX IF NOT EXISTS idx_events_sequence ON events(sequence);
 CREATE INDEX IF NOT EXISTS idx_trial_captures_capture ON trial_captures(capture_id, trial_id);
 `;
+
+const assetSeeds = {
+  projects: [
+    ["seed-project-myopc", "MYOPC", "tool", "active", "个人项目、工具与知识资产空间", "https://github.com/kioooice/MYOPC"],
+    ["seed-project-observer", "Project Observer", "tool", "active", "本地优先的项目状态、记忆与理解工作台", "https://github.com/kioooice/Project-Observer"],
+    ["seed-project-helm", "Helm", "tool", "done", "已完成的个人项目关系理解工具", "https://github.com/kioooice/Helm"],
+    ["seed-project-scholarscope", "ScholarScope Desktop", "tool", "active", "个人文献检索桌面工具", "https://github.com/kioooice/scholarscope-desktop"],
+    ["seed-project-knowledge", "Knowledge Engine", "business", "active", "面向企业 Agent 的知识构建、检索与评测能力", "https://github.com/kioooice/surface-treatment-agent-workbench"],
+    ["seed-project-enterprise-agent", "Enterprise Agent", "business", "paused", "以知识能力层为基础的企业 Agent 长期方向", "https://github.com/kioooice/agent"],
+  ],
+  tools: [
+    ["seed-tool-project-observer", "Project Observer", "自建工具", "正在使用", "恢复项目事实、状态与开发演进", "本地运行，按项目目录建立观察", "GitHub / 本地", "https://github.com/kioooice/Project-Observer", "GitHub 仓库确认 v0.12；当前主链路包含 Repository Map、Evidence Map、Project Model 与 Commit Flow。"],
+    ["seed-tool-easel", "Easel", "开源项目", "正在使用", "社交媒体内容策划、制作与运营", "独立运行，不由 OPC 复制其运营功能", "服务器", "https://github.com/ZJU-REAL/Easel", "服务器 easel-gateway 与 easel-web 服务均为 active。"],
+    ["seed-tool-karakeep", "Karakeep", "服务", "正在使用", "保存外部文章、链接、资料与灵感", "作为 OPC 的外部输入层", "服务器", "https://github.com/karakeep-app/karakeep", "服务器 Karakeep 0.33.2 容器 healthy。"],
+    ["seed-tool-autodl", "AutoDL", "服务", "尝试中", "提供视频生成所需的在线 GPU 计算", "按实际任务启动计算资源", "云服务", "https://www.autodl.com", "上下文已确定为视频制作路径；本轮未核对在线实例。"],
+    ["seed-tool-h3", "H3", "模型", "尝试中", "视频生成能力", "由 Easel 工作流按需调用", "AutoDL", null, "具体模型与版本仍待实际工作流核对。"],
+    ["seed-tool-github", "GitHub", "服务", "正在使用", "保存代码与项目交付事实", "仓库、提交和远程同步", "SaaS", "https://github.com/kioooice", "MYOPC、Project Observer、Helm、ScholarScope 等仓库已核对。"],
+    ["seed-tool-codex", "Codex", "Agent", "正在使用", "执行代码开发、测试与交付", "通过本地工作树和 GitHub 协作", "本地", null, "当前 MYOPC 改造与三端部署由 Codex 实际执行。"],
+    ["seed-tool-cloud-deploy", "GitHub 到私人云安全部署", "Workflow", "已验证", "将已提交版本部署到私人云并保留数据", "Git 同步、测试、构建、容器重建和健康检查", "GitHub / 服务器", null, "已验证提交一致性、SQLite 持久化与 HTTP 200；凭据不进入资产记录。"],
+  ],
+  space: [
+    ["seed-space-cloud-node", "私人云工作节点初始化", "工作流", "服务器环境要区分代码同步与业务数据持久化。初始化后分别验证运行服务、磁盘、内存、端口和失败服务；任何模拟或历史状态都不能替代现场核查。", null, "历史部署曾验证；当前服务器已重新核查基础运行状态。"],
+    ["seed-space-safe-deploy", "GitHub 到私人云服务安全部署", "经验", "部署应以已提交 SHA 为单位，先确认工作树和远程提交，再备份 SQLite，执行测试、lint、build，重启服务并核对 release 标记与 HTTP 健康。GitHub 私有仓库无法直接拉取时，可传输同一提交的 Git bundle，但仍要让服务器工作树落在可追踪提交上。", null, "2026-09-09 使用同一提交完成本地、GitHub 与服务器一致性验证。"],
+    ["seed-space-boundaries", "OPC 与外部工具的职责边界", "决策", "Karakeep 负责外部发现，Projects 保存当前项目画像，Toolbox 保存可调用能力，Space 保存经过实践形成的认知，Project Observer 解释项目演进，Easel 负责内容运营，AutoDL/H3 提供视频计算，Codex 执行开发。", null, "来自当前冻结产品定义。"],
+  ],
+};
 
 export function getDataDirectory() {
   return process.env.MYOPC_DATA_DIR || join(homedir(), ".myopc");
@@ -161,6 +211,31 @@ export function getDb() {
   instance.exec("CREATE INDEX IF NOT EXISTS idx_trial_captures_capture ON trial_captures(capture_id, trial_id)");
   instance.exec("INSERT OR IGNORE INTO trial_captures(trial_id, capture_id, position, created_at) SELECT id, capture_id, 0, created_at FROM trials WHERE capture_id IS NOT NULL");
   instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (8, ?)").run(new Date().toISOString());
+
+  const timestamp = new Date().toISOString();
+  if (process.env.NODE_ENV !== "test") {
+  const insertProject = instance.prepare("INSERT OR IGNORE INTO projects(id,name,category,description,status,revision,created_at,updated_at) VALUES (?,?,?,?,?,1,?,?)");
+  const insertSeedLocation = instance.prepare("INSERT OR IGNORE INTO project_locations(id,project_id,label,environment,repository_url,created_at,updated_at) VALUES (?,?,?,?,?,?,?)");
+  for (const [id, name, category, status, description, repositoryUrl] of assetSeeds.projects) {
+    insertProject.run(id, name, category, description, status, timestamp, timestamp);
+    instance.prepare("UPDATE projects SET category=? WHERE id=?").run(category, id);
+    insertSeedLocation.run(`${id}-github`, id, "GitHub", "远程仓库", repositoryUrl, timestamp, timestamp);
+  }
+  const insertTool = instance.prepare("INSERT OR IGNORE INTO tools(id,name,type,status,purpose,usage,location,source_url,verification,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
+  for (const row of assetSeeds.tools) insertTool.run(...row, timestamp, timestamp);
+  const insertSpace = instance.prepare("INSERT OR IGNORE INTO space_entries(id,title,type,content,source_url,verification,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)");
+  for (const row of assetSeeds.space) insertSpace.run(...row, timestamp, timestamp);
+  const projectTool = instance.prepare("INSERT OR IGNORE INTO project_tools(project_id,tool_id) VALUES (?,?)");
+  for (const toolId of ["seed-tool-project-observer", "seed-tool-github", "seed-tool-codex", "seed-tool-cloud-deploy"]) projectTool.run("seed-project-myopc", toolId);
+  projectTool.run("seed-project-observer", "seed-tool-github");
+  projectTool.run("seed-project-knowledge", "seed-tool-github");
+  const projectSpace = instance.prepare("INSERT OR IGNORE INTO project_space_entries(project_id,space_entry_id) VALUES (?,?)");
+  projectSpace.run("seed-project-myopc", "seed-space-safe-deploy");
+  projectSpace.run("seed-project-myopc", "seed-space-boundaries");
+  const toolSpace = instance.prepare("INSERT OR IGNORE INTO tool_space_entries(tool_id,space_entry_id) VALUES (?,?)");
+  toolSpace.run("seed-tool-cloud-deploy", "seed-space-safe-deploy");
+  }
+  instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (9, ?)").run(timestamp);
   return instance;
 }
 
