@@ -19,7 +19,7 @@ type Capture = { id: string; kind: string; title: string; content?: string | nul
 type Method = { id: string; title: string; purpose: string; revision_label: string; steps: string[]; conditions?: string | null; family_id?: string | null; previous_method_id?: string | null; revision_number: number; created_at: string; usage_count?: number; captures?: Capture[] };
 type WriteRequest = PendingWrite;
 type ProjectCategory = (typeof PROJECT_CATEGORIES)[number];
-type View = "overview" | "projects" | "active" | "inbox" | "deliverables" | "library";
+type View = "overview" | "projects" | "toolbox" | "space" | "active" | "inbox" | "deliverables" | "library";
 
 const statusLabel = (status: string) => ({ in_progress: "进行中", review: "审阅中", done: "已完成", paused: "已暂停" }[status] || status);
 const kindLabel = (kind?: string) => kind === "failure" ? "从失败开始" : kind === "discovery" ? "从资料开始" : "从需求开始";
@@ -100,7 +100,7 @@ export default function Home() {
   function openTrial(id: string) { setSelected(id); setSelectedProject(""); setView("active"); }
   function openProject(id: string) { setSelected(""); setSelectedProject(id); setView("projects"); }
 
-  function openLibrary() { setSelected(""); setSelectedProject(""); setView("library"); }
+  function openLibrary(section: "toolbox" | "space") { setSelected(""); setSelectedProject(""); setView(section); }
 
   async function sendWrite(request: WriteRequest) {
     const existing = pendingWriteRef.current;
@@ -171,24 +171,15 @@ export default function Home() {
     finally { setBusy(false); }
   }
 
-  const overviewNav = [
-    { id: "active" as View, label: "进行中", icon: Rocket, count: activeTrials.length },
-    { id: "inbox" as View, label: "待处理", icon: Inbox, count: inboxCount },
-    { id: "deliverables" as View, label: "成果", icon: FileText, count: deliverableCount },
-  ];
-  const plannedNav = [{ label: "能力", icon: BookOpen }];
-
   return <main className={sidebarOpen ? "app-shell" : "app-shell sidebar-collapsed"}>
     <aside className="sidebar">
       <div className="sidebar-head"><button className="logo" onClick={() => { setView("overview"); setSelected(""); setSelectedProject(""); }} aria-label="返回总览">M</button><strong>MYOPC</strong><button className="icon-button collapse" onClick={() => setSidebarOpen(false)} title="收起侧边栏"><PanelLeftClose size={18} /></button></div>
       <nav className="primary-nav" aria-label="主导航">
         <button className={view === "overview" && !selected ? "nav-item active" : "nav-item"} onClick={() => { setView("overview"); setSelected(""); setSelectedProject(""); }}><Sparkles size={17} /><span>总览</span></button>
-        <div className="nav-children" aria-label="总览下级">
-          {overviewNav.map(({ id, label, icon: Icon, count }) => <button key={id} className={view === id ? "nav-item nav-child active" : "nav-item nav-child"} onClick={() => { setView(id); setSelected(""); setSelectedProject(""); }}><Icon size={16} /><span>{label}</span>{Boolean(count) && <b>{count}</b>}</button>)}
-        </div>
         <div className="nav-divider" />
         <button className={view === "projects" && !selected ? "nav-item active" : "nav-item"} onClick={() => { setView("projects"); setSelected(""); setSelectedProject(""); }}><Folder size={17} /><span>项目</span>{Boolean(projects.length) && <b>{projects.length}</b>}</button>
-        {plannedNav.map(({ label, icon: Icon }) => <button key={label} className={view === "library" ? "nav-item active" : "nav-item"} onClick={openLibrary}><Icon size={17} /><span>{label}</span>{captures.length > 0 && <b>{captures.length}</b>}</button>)}
+        <button className={view === "toolbox" ? "nav-item active" : "nav-item"} onClick={() => openLibrary("toolbox")}><Rocket size={17} /><span>工具</span>{captures.filter((item) => ["tool", "software", "open_source", "model", "api", "cli", "skill", "workflow", "service"].includes(item.kind)).length > 0 && <b>{captures.filter((item) => ["tool", "software", "open_source", "model", "api", "cli", "skill", "workflow", "service"].includes(item.kind)).length}</b>}</button>
+        <button className={view === "space" ? "nav-item active" : "nav-item"} onClick={() => openLibrary("space")}><BookOpen size={17} /><span>空间</span>{methods.length > 0 && <b>{methods.length}</b>}</button>
       </nav>
       <div className="sidebar-section"><div className="section-label"><span>最近行动</span>{trials.length > 0 && <small>{trials.length}</small>}</div>
         {trials.length > 4 && <label className="search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索" /></label>}
@@ -203,13 +194,13 @@ export default function Home() {
         {pendingWrite && <div className="pending-write-banner"><CircleAlert size={16} /><span><strong>{pendingWrite.label}尚未确认</strong><small>请求已保留；读取成功不代表写入响应已确认。</small></span><button className="retry-button" onClick={() => void retryWrite()} disabled={busy}>重试原请求</button></div>}
         {error && <div className="error-banner"><CircleAlert size={16} /><span>{error}</span>{!pendingWrite && <button className="retry-button" onClick={() => void load()}>重新连接</button>}<button onClick={() => setError("")} aria-label="关闭提示"><X size={16} /></button></div>}
         {loading && <div className="loading-state">正在读取共享工作状态…</div>}
-        {!loading && !trial && view === "overview" && <OverviewView trials={trials} pendingReviewCount={pendingReviewCount} onOpen={openTrial} onNavigate={(nextView) => { setView(nextView); setSelected(""); setSelectedProject(""); }} />}
+        {!loading && !trial && view === "overview" && <OverviewView trials={trials} projects={projects} captures={captures} methods={methods} onOpen={openTrial} onNavigate={(nextView) => { setView(nextView); setSelected(""); setSelectedProject(""); }} />}
         {!loading && !trial && view === "projects" && project && <ProjectDetailView project={project} category={projectCategories.find((item) => item.id === project.category)} onBack={() => setSelectedProject("")} onOpenTrial={openTrial} />}
         {!loading && !trial && view === "projects" && !project && <ProjectsView projects={projects} categories={projectCategories} onOpen={openProject} />}
         {!loading && !trial && view === "active" && <ListView title="进行中的行动" subtitle="从这里继续目标、产物和反馈；审阅中的行动也保留在这里。" trials={activeTrials} onOpen={openTrial} empty="还没有进行中的行动" />}
         {!loading && !trial && view === "inbox" && <InboxView trials={trials} onOpen={openTrial} />}
         {!loading && !trial && view === "deliverables" && <DeliverablesView trials={trials} onOpen={openTrial} />}
-        {!loading && !trial && view === "library" && <LibraryView captures={captures} methods={methods} projects={projects} busy={busy} onWrite={sendWrite} onReload={() => load(true)} />}
+        {!loading && !trial && (view === "toolbox" || view === "space" || view === "library") && <LibraryView section={view === "space" ? "space" : "toolbox"} captures={captures} methods={methods} projects={projects} busy={busy} onWrite={sendWrite} onReload={() => load(true)} />}
         {trial && <TrialWorkspace trial={trial} busy={busy} onFeedback={addFeedback} onAccept={accept} onDraft={createDraft} />}
       </div>
     </section>
@@ -257,11 +248,11 @@ function ProjectDetailView({ project, category, onBack, onOpenTrial }: { project
   </div>;
 }
 
-function OverviewView({ trials, pendingReviewCount, onOpen, onNavigate }: { trials: Trial[]; pendingReviewCount: number; onOpen: (id: string) => void; onNavigate: (view: View) => void }) {
-  const activeTrials = trials.filter((item) => item.status === "in_progress" || item.status === "review");
-  const recentTrials = trials.slice(0, 4);
-  const openFeedback = trials.flatMap((item) => item.deliverables).flatMap((item) => item.versions).flatMap((item) => item.feedback).filter((item) => item.status === "open").length;
-  return <div className="overview-view"><section className="overview-hero"><div className="overview-intro"><span className="eyebrow">工作台</span><h1>让 MYOPC 记录正在发生的工作</h1><p>在 Codex 中提出需求、执行工作；这里查看行动、成果、反馈和下一步。</p></div><div className="codex-note"><span><Sparkles size={18} /></span><div><strong>Codex 驱动</strong><small>输入与执行发生在 Codex</small></div></div></section><div className="overview-stats"><button onClick={() => onNavigate("active")}><span>进行中</span><strong>{activeTrials.length}</strong><small>继续中的行动 <ChevronRight size={13} /></small></button><button onClick={() => onNavigate("inbox")}><span>待处理</span><strong>{openFeedback + pendingReviewCount}</strong><small>待审阅或需要修改 <ChevronRight size={13} /></small></button><button onClick={() => onNavigate("deliverables")}><span>成果</span><strong>{trials.reduce((count, item) => count + item.deliverables.length, 0)}</strong><small>已记录的成果 <ChevronRight size={13} /></small></button></div><section className="overview-section"><div className="overview-section-head"><div><span className="eyebrow">最近行动</span><h2>继续你的工作</h2></div>{recentTrials.length > 0 && <button className="text-button" onClick={() => onNavigate("active")}>查看全部 <ChevronRight size={14} /></button>}</div>{recentTrials.length === 0 ? <div className="overview-empty"><span className="overview-empty-icon"><Sparkles size={22} /></span><h2>等待 Codex 中的下一次行动</h2><p>当你在 Codex 中提出需求、整理资料或记录失败，相关记录会出现在这里。</p><div className="workflow-hint"><span><b>01</b>在 Codex 中提出目标</span><span><b>02</b>Codex 执行并记录</span><span><b>03</b>在 MYOPC 中查看反馈</span></div></div> : <div className="overview-trials">{recentTrials.map((item) => <button className="overview-trial" key={item.id} onClick={() => onOpen(item.id)}><span className="overview-trial-icon"><Rocket size={16} /></span><span className="overview-trial-copy"><strong>{item.title}</strong><small>{item.goal}</small></span><span className="overview-trial-status">{statusLabel(item.status)}</span><ChevronRight size={15} /></button>)}</div>}</section></div>;
+function OverviewView({ trials, projects, captures, methods, onOpen, onNavigate }: { trials: Trial[]; projects: Project[]; captures: Capture[]; methods: Method[]; onOpen: (id: string) => void; onNavigate: (view: View) => void }) {
+  const activeProjects = projects.filter((item) => item.status === "active" || item.status === "in_progress").slice(0, 3);
+  const recentTrials = trials.slice(0, 3);
+  const toolCount = captures.filter((item) => ["tool", "software", "open_source", "model", "api", "cli", "skill", "workflow", "service"].includes(item.kind)).length;
+  return <div className="overview-view"><section className="overview-hero"><div className="overview-intro"><span className="eyebrow">个人资产空间</span><h1>我在做什么、能用什么、留下了什么</h1><p>Projects 记录当前项目，Toolbox 保存真正可调用的工具，Space 沉淀经过实践的知识。</p></div><div className="codex-note"><span><Sparkles size={18} /></span><div><strong>轻量连接</strong><small>项目、工具与知识各自归位</small></div></div></section><div className="overview-stats"><button onClick={() => onNavigate("projects")}><span>正在进行的项目</span><strong>{activeProjects.length}</strong><small>查看 Projects <ChevronRight size={13} /></small></button><button onClick={() => onNavigate("toolbox")}><span>可调用工具</span><strong>{toolCount}</strong><small>查看 Toolbox <ChevronRight size={13} /></small></button><button onClick={() => onNavigate("space")}><span>知识与方法</span><strong>{methods.length}</strong><small>查看 Space <ChevronRight size={13} /></small></button></div><section className="overview-section"><div className="overview-section-head"><div><span className="eyebrow">Projects</span><h2>最近在做什么</h2></div><button className="text-button" onClick={() => onNavigate("projects")}>查看全部 <ChevronRight size={14} /></button></div>{activeProjects.length === 0 ? <div className="overview-empty"><span className="overview-empty-icon"><Folder size={22} /></span><h2>还没有进行中的项目</h2><p>先在 Projects 中登记一个项目，再从项目详情跟踪当前状态。</p></div> : <div className="overview-trials">{activeProjects.map((item) => <button className="overview-trial" key={item.id} onClick={() => onNavigate("projects")}><span className="overview-trial-icon"><Folder size={16} /></span><span className="overview-trial-copy"><strong>{item.name}</strong><small>{item.description || "尚未补充项目定位"}</small></span><span className="overview-trial-status">{statusLabel(item.status)}</span><ChevronRight size={15} /></button>)}</div>}</section><section className="overview-section"><div className="overview-section-head"><div><span className="eyebrow">最近沉淀</span><h2>从行动中留下的东西</h2></div><button className="text-button" onClick={() => onNavigate("space")}>打开 Space <ChevronRight size={14} /></button></div>{methods.length === 0 ? <div className="quiet-empty"><BookOpen size={22} /><p>还没有 Space 内容</p></div> : <div className="overview-trials">{methods.slice(0, 3).map((item) => <button className="overview-trial" key={item.id} onClick={() => onNavigate("space")}><span className="overview-trial-icon"><BookOpen size={16} /></span><span className="overview-trial-copy"><strong>{item.title}</strong><small>{item.purpose}</small></span><span className="overview-trial-status">{item.revision_label}</span><ChevronRight size={15} /></button>)}</div>}</section>{recentTrials.length > 0 && <p className="overview-footnote">最近行动仍保留在项目详情和历史记录中，共 {recentTrials.length} 条最近记录。</p>}</div>;
 }
 
 function ListView({ title, subtitle, trials, onOpen, empty }: { title: string; subtitle: string; trials: Trial[]; onOpen: (id: string) => void; empty: string }) {
@@ -283,12 +274,14 @@ function DeliverablesView({ trials, onOpen }: { trials: Trial[]; onOpen: (id: st
   return <div className="list-view"><div className="view-title"><h1>成果</h1><p>所有稿件、视频和工具版本。</p></div>{rows.length === 0 ? <div className="quiet-empty"><FileText size={22} /><p>还没有成果</p></div> : <div className="rows">{rows.map(({ trial, deliverable }) => <button key={deliverable.id} onClick={() => onOpen(trial.id)}><span className="row-icon"><FileText size={16} /></span><span><strong>{deliverable.title}</strong><small>{trial.title} · {deliverable.versions.length} 个版本</small></span><b>{reviewStatusLabel(deliverable.review_status)}</b></button>)}</div>}</div>;
 }
 
-function LibraryView({ captures, methods, projects, busy, onWrite, onReload }: { captures: Capture[]; methods: Method[]; projects: Project[]; busy: boolean; onWrite: (request: WriteRequest) => Promise<unknown>; onReload: () => void }) {
-  const [tab, setTab] = useState<"captures" | "methods">("captures");
+function LibraryView({ section, captures, methods, projects, busy, onWrite, onReload }: { section: "toolbox" | "space"; captures: Capture[]; methods: Method[]; projects: Project[]; busy: boolean; onWrite: (request: WriteRequest) => Promise<unknown>; onReload: () => void }) {
+  const [tab, setTab] = useState<"captures" | "methods">(section === "space" ? "methods" : "captures");
   const [query, setQuery] = useState("");
   const [selectedCaptures, setSelectedCaptures] = useState<string[]>([]);
   const [message, setMessage] = useState("");
-  const visibleCaptures = captures.filter((item) => `${item.title} ${item.content || ""} ${item.source || ""}`.toLowerCase().includes(query.toLowerCase()));
+  const toolKinds = ["tool", "software", "open_source", "model", "api", "cli", "skill", "workflow", "service"];
+  const toolCaptures = captures.filter((item) => toolKinds.includes(item.kind));
+  const visibleCaptures = (section === "toolbox" ? toolCaptures : captures).filter((item) => `${item.title} ${item.content || ""} ${item.source || ""}`.toLowerCase().includes(query.toLowerCase()));
   const visibleMethods = methods.filter((item) => `${item.title} ${item.purpose}`.toLowerCase().includes(query.toLowerCase()));
   const toggleCapture = (id: string) => setSelectedCaptures((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
 
@@ -328,8 +321,8 @@ function LibraryView({ captures, methods, projects, busy, onWrite, onReload }: {
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : "行动创建失败"); }
   }
 
-  return <div className="library-view"><div className="view-title"><span className="eyebrow">能力</span><h1>把素材变成下一次行动</h1><p>先收下链接、文字或文件，再选择已有方法和多份素材开始内容生产。收纳不会自动安装或执行任何工具。</p></div>
-    <div className="library-toolbar"><div className="library-tabs"><button className={tab === "captures" ? "active" : ""} onClick={() => setTab("captures")}>素材库 <b>{captures.length}</b></button><button className={tab === "methods" ? "active" : ""} onClick={() => setTab("methods")}>方法与工具 <b>{methods.length}</b></button></div><label className="library-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、正文或来源" /></label></div>
+  return <div className="library-view"><div className="view-title"><span className="eyebrow">{section === "toolbox" ? "Toolbox" : "Space"}</span><h1>{section === "toolbox" ? "真正可以调用的工具" : "经过实践留下的知识"}</h1><p>{section === "toolbox" ? "只记录已经配置、尝试或验证过的软件、模型、API、Skill 和 Workflow；发现但未拥有的内容留在外部收藏工具。" : "这里保存方法、经验、决策和学习，不复制外部资料，也不把收藏直接当成能力。"}</p></div>
+    <div className="library-toolbar"><div className="library-tabs"><button className={tab === "captures" ? "active" : ""} onClick={() => setTab("captures")}>{section === "toolbox" ? "工具记录" : "来源记录"} <b>{section === "toolbox" ? toolCaptures.length : captures.length}</b></button><button className={tab === "methods" ? "active" : ""} onClick={() => setTab("methods")}>{section === "toolbox" ? "使用方法" : "方法与经验"} <b>{methods.length}</b></button></div><label className="library-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题、正文或来源" /></label></div>
     {message && <div className="library-message">{message}</div>}
     {tab === "captures" ? <><form className="capture-form" onSubmit={saveCapture}><div className="capture-form-title"><Plus size={16} />收下一份新素材</div><div className="capture-form-grid"><input name="title" placeholder="标题（可选）" /><input name="source" type="url" placeholder="来源链接（可选）" /><select name="kind" defaultValue="text" aria-label="素材类型"><option value="text">文本/想法</option><option value="link">链接</option><option value="image">图片</option><option value="video">视频</option><option value="tool">工具或 Skill</option></select><input name="file" type="file" aria-label="选择文件（最大 2 MB）" /><textarea name="content" rows={3} placeholder="粘贴文字或记下想法（可选）" /><button disabled={busy}><Upload size={14} />保存素材</button></div></form><div className="capture-list">{visibleCaptures.length === 0 ? <div className="quiet-empty"><Link2 size={22} /><p>还没有匹配的素材</p></div> : visibleCaptures.map((capture) => <article className={selectedCaptures.includes(capture.id) ? "capture-card selected" : "capture-card"} key={capture.id}><label className="capture-select"><input type="checkbox" checked={selectedCaptures.includes(capture.id)} onChange={() => toggleCapture(capture.id)} /><span>用于下一次行动</span></label><div className="capture-card-head"><div><span className="capture-kind">{capture.kind}</span><h2>{capture.title}</h2></div><span className={`read-status ${capture.read_status}`}>{capture.read_status === "read" ? "已读取" : capture.read_status === "failed" ? "读取失败" : "未整理"}</span></div>{capture.content && <p>{capture.content}</p>}{capture.source && <a href={capture.source} target="_blank" rel="noreferrer"><ExternalLink size={12} />打开来源</a>}{capture.has_file && <a href={`/api/v1/captures/${capture.id}/file`} target="_blank" rel="noreferrer"><FileText size={12} />预览文件{capture.file_name ? ` · ${capture.file_name}` : ""}</a>}<div className="capture-card-foot"><span>已用于 {capture.used_count || 0} 次行动 · 关联 {capture.method_count || 0} 个方法</span>{capture.read_status !== "read" && <button onClick={() => void markRead(capture)}>标为已读取</button>}</div></article>)}</div></> : <><MethodForm captures={captures} methods={methods} busy={busy} onWrite={onWrite} onReload={onReload} onMessage={setMessage} /><div className="method-list">{visibleMethods.length === 0 ? <div className="quiet-empty"><BookOpen size={22} /><p>还没有匹配的方法版本</p></div> : visibleMethods.map((method) => <article className="method-card" key={method.id}><div className="capture-card-head"><div><span className="capture-kind">方法版本 · {method.revision_label}</span><h2>{method.title}</h2></div><span className="read-status read">已记录</span></div><p>{method.purpose}</p><ol>{method.steps.map((step) => <li key={step}>{step}</li>)}</ol><div className="capture-card-foot"><span>已用于 {method.usage_count || 0} 次行动</span><small>{method.conditions || "未补充限制条件"}</small></div></article>)}</div></>}
     {tab === "captures" && selectedCaptures.length > 0 && <form className="action-form" onSubmit={createAction}><div><span className="eyebrow">组合素材</span><h2>用选中的 {selectedCaptures.length} 份素材发起内容行动</h2></div><input name="title" required placeholder="行动标题" /><textarea name="goal" required rows={2} placeholder="面向谁、要解决什么问题？" /><div className="action-form-row"><select name="method_id" defaultValue="" aria-label="选择方法版本"><option value="" disabled>选择方法版本</option>{methods.map((method) => <option key={method.id} value={method.id}>{method.title} · {method.revision_label}</option>)}</select><select name="project_id" defaultValue="" aria-label="关联项目"><option value="">不关联项目</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><button disabled={busy}>开始内容行动</button></div></form>}
