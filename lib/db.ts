@@ -111,6 +111,30 @@ CREATE TABLE IF NOT EXISTS idempotency (
   payload_hash TEXT NOT NULL, response_status INTEGER NOT NULL,
   response_json TEXT NOT NULL, created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS knowledge_entries (
+  id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT '',
+  tags_json TEXT NOT NULL DEFAULT '[]', related_json TEXT NOT NULL DEFAULT '[]',
+  link TEXT, updated_at TEXT, sources_json TEXT NOT NULL DEFAULT '[]',
+  extra_json TEXT NOT NULL DEFAULT '{}', body TEXT NOT NULL, rel_path TEXT NOT NULL,
+  content_hash TEXT NOT NULL, visible INTEGER NOT NULL DEFAULT 1,
+  first_seen_at TEXT NOT NULL, last_seen_at TEXT NOT NULL, changed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS knowledge_reading_notes (
+  entry_id TEXT PRIMARY KEY REFERENCES knowledge_entries(id) ON DELETE CASCADE,
+  prompt_version TEXT NOT NULL, source_hash TEXT NOT NULL, model TEXT NOT NULL,
+  status TEXT NOT NULL, content_json TEXT, error TEXT,
+  generated_at TEXT, attempted_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS knowledge_sync_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  directory TEXT, repository TEXT, branch TEXT, commit_sha TEXT,
+  status TEXT NOT NULL, message TEXT,
+  entry_count INTEGER NOT NULL DEFAULT 0, added_count INTEGER NOT NULL DEFAULT 0,
+  updated_count INTEGER NOT NULL DEFAULT 0, removed_count INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT, finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_knowledge_entries_kind ON knowledge_entries(kind, visible, title);
 CREATE INDEX IF NOT EXISTS idx_versions_deliverable ON deliverable_versions(deliverable_id, ordinal);
 CREATE INDEX IF NOT EXISTS idx_feedback_version ON feedback(version_id, status);
 CREATE INDEX IF NOT EXISTS idx_project_locations_project ON project_locations(project_id, updated_at);
@@ -236,6 +260,7 @@ export function getDb() {
   toolSpace.run("seed-tool-cloud-deploy", "seed-space-safe-deploy");
   }
   instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (9, ?)").run(timestamp);
+  instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (10, ?)").run(new Date().toISOString());
   return instance;
 }
 

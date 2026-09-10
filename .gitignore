@@ -10,3 +10,4 @@ coverage/
 *.sqlite-wal
 .release-commit
 
+tsconfig.tsbuildinfo

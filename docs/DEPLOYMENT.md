@@ -2,7 +2,7 @@
 
 ## 本地 Windows
 
-Node.js 24+，npm 随 Node 安装。根目录 start.bat 会调用 start.ps1，首次安装依赖后启动并打开浏览器。
+Node.js 24+。根目录 `start.bat` 调用 `start.ps1`，首次安装依赖后启动并打开浏览器。
 
 ```powershell
 .\start.ps1
@@ -10,34 +10,75 @@ Node.js 24+，npm 随 Node 安装。根目录 start.bat 会调用 start.ps1，�
 .\start.ps1 -Production
 ```
 
-默认地址 http://127.0.0.1:3000，默认数据目录 %LOCALAPPDATA%\MYOPC\data。
--Check 只检查启动环境（首次仍可能安装依赖）。
+默认地址 `http://127.0.0.1:3000`，默认数据目录 `%LOCALAPPDATA%\MYOPC\data`。
+
+本地还需要在 `.env.local`（不进 Git）配置知识仓库与模型：
+
+```ini
+MYOPC_KNOWLEDGE_DIR=D:\Projects\MYOPC-Knowledge
+MYOPC_MODEL=deepseek-flash
+MYOPC_MODEL_BASE_URL=https://api.deepseek.com
+MYOPC_MODEL_API_KEY=...
+```
+
+`start.ps1` 显式设置的 `MYOPC_DATA_DIR` 优先于 `.env.local` 中的同名变量。
 
 ## 手动运行
 
 ```sh
 npm ci
 npm run dev -- --hostname 127.0.0.1
+npm run build && npm run start -- --hostname 127.0.0.1
 ```
 
-正式运行使用 npm run build 后执行 npm run start -- --hostname 127.0.0.1。
-可通过 MYOPC_DATA_DIR 指定独立数据目录。具体端口以启动参数为准。
+## 知识同步
 
-## 可选脚本客户端
-
-网页以外的工具可调用 /api/v1；不使用客户端也可以正常使用网页。
+网页提供“同步知识仓库”和批量加工按钮。命令行等价：
 
 ```sh
-npm run continuity -- context --trial-id <id>
-npm run continuity -- draft --trial-id <id> --title "成果标题" --content-file ./draft.md
+npx tsx scripts/knowledge-sync.ts --limit 3        # 同步索引并加工最多 3 条
+npx tsx scripts/knowledge-sync.ts --no-process     # 只更新索引
+npx tsx scripts/knowledge-sync.ts --force-entry id # 强制重做某一条
 ```
 
-远程服务可设置 MYOPC_BASE_URL；需要 Basic Auth 时再设置 MYOPC_USERNAME / MYOPC_PASSWORD。
-写入使用 X-Client-Request-Id，客户端支持 --request-id 或 MYOPC_REQUEST_ID。结果不确定时用相同编号和载荷重试。
+放到计划任务里即可定时执行；重复执行不会重复写入，也不会重复调用模型。
+
+## 服务器（124.222.190.89）
+
+当前结构：
+
+| 位置 | 内容 |
+| --- | --- |
+| /opt/apps/opc | 应用代码的 Git 检出，容器镜像从这里构建 |
+| 容器 `myopc` | 监听 127.0.0.1:3011，数据卷 `/opt/data/opc:/data` |
+| /opt/data/knowledge/myopc | 知识仓库检出（只读挂载进容器 `/knowledge`） |
+| OpenResty | `:3010` 反向代理到 3011，带 Basic Auth |
+| /opt/apps/opc/.env | 运行环境变量，含模型密钥，不进 Git |
+
+部署步骤：
+
+1. 本地确认改动已提交并推送，记录提交 SHA。
+2. 服务器 `git -C /opt/apps/opc fetch` 并切到目标提交，工作区保持干净。
+3. 备份 `/opt/data/opc/myopc.sqlite`（SQLite backup API，校验完整性与外键）。
+4. `docker compose -f docker-compose.prod.yml up -d --build`。
+5. 核对 `MYOPC_RELEASE`、`/api/v1/health`、`/api/v1/knowledge` 与 `:3010` 的实际返回。
+
+知识内容与代码分开更新：只改知识仓库时不需要重新部署，同步一次即可；改代码或依赖才重建容器。
+
+### 服务器上的知识同步
+
+知识仓库是私有仓库，服务器用只读 Deploy Key 拉取：
+
+```sh
+sudo git -C /opt/data/knowledge/myopc fetch --prune origin
+sudo git -C /opt/data/knowledge/myopc reset --hard origin/main
+curl -fsS -X POST http://127.0.0.1:3011/api/v1/knowledge/sync -H 'content-type: application/json' -d '{}'
+curl -fsS -X POST http://127.0.0.1:3011/api/v1/knowledge/process -H 'content-type: application/json' -d '{"limit":3}'
+```
+
+这三步可以放在 systemd timer 或 cron 里定时跑。
 
 ## 数据维护
-
-运行数据独立于 Git。已有 SQLite 一致性备份工具：
 
 ```powershell
 npm run db:backup -- --output D:\private\backups\myopc.sqlite
@@ -45,12 +86,8 @@ npm run db:verify -- --file D:\private\backups\myopc.sqlite
 npm run db:restore -- --file D:\private\backups\myopc.sqlite --directory D:\private\restore-check
 ```
 
-备份时使用与应用相同的 MYOPC_DATA_DIR。恢复使用新目录；在线 SQLite 不能只复制主数据库文件。
+备份时使用与应用相同的 `MYOPC_DATA_DIR`；在线 SQLite 不能只复制主数据库文件。
 
-## 历史服务器文件
+## 历史文件
 
-Dockerfile、docker-compose.yml、deploy/main-site.conf、scripts/deploy-opc.sh 保留，便于后续按需适配。
-其中 deploy-opc.sh 依赖旧 systemd 服务、服务器目录和 Tailscale；main-site.conf 也包含旧站点配置。
-这些文件不是当前本地启动步骤，不直接拿来部署新环境。代码未因本次文档整理而修改。
-
-OPC 和 Easel 分别运行；本仓库的启动脚本只启动 OPC。
+`Dockerfile`、`docker-compose.yml`、`deploy/`、`scripts/deploy-opc.sh` 保留供参考；`deploy-opc.sh` 依赖旧 systemd 服务与 Tailscale，不直接用于当前部署。

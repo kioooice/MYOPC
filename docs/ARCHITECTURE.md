@@ -2,54 +2,72 @@
 
 ## 实现结构
 
-MYOPC 是 Next.js 单体应用：React / TypeScript 前端、Node.js 服务端、better-sqlite3 持久化。
+MYOPC 是 Next.js 单体应用：React / TypeScript 前端、Node.js 服务端、better-sqlite3 持久化。内容来自仓库外的知识仓库，运行数据留在本地数据库。
 
 | 路径 | 用途 |
 | --- | --- |
-| app/page.tsx、app/globals.css | 工作台页面与样式 |
+| app/page.tsx、app/globals.css | 页面与样式：总览、项目、工具、空间、条目详情、历史行动 |
 | app/api/v1/[...segments]/route.ts | HTTP 请求分发 |
-| lib/business.ts | 业务读写、校验与关联 |
-| lib/db.ts | SQLite 连接与数据库结构 |
-| lib/backup.ts | 一致性备份与校验 |
-| scripts/continuity-client.ts | 可选 HTTP 脚本客户端 |
-| start.bat、start.ps1 | Windows 本地启动 |
-| tests/ | 业务与写入重试测试 |
+| lib/knowledge/yaml.ts | 知识仓库使用的少量 YAML 解析（`key: value`、内联列表、列表项） |
+| lib/knowledge/repo.ts | 读取知识目录，解析 front matter、来源引用并计算内容哈希 |
+| lib/knowledge/store.ts | 索引、同步状态、阅读说明结果的 SQLite 读写 |
+| lib/knowledge/model.ts | 模型客户端（默认 DeepSeek，`chat/completions`） |
+| lib/knowledge/reading-note.ts | “阅读说明”规程：提示词、输出校验、失败保留上一次结果 |
+| lib/knowledge/service.ts | 对外服务：同步、列表、详情、生成与批量加工 |
+| lib/business.ts、lib/db.ts | 历史业务读写与数据库结构 |
+| scripts/knowledge-sync.ts | 命令行同步与加工（可定时执行） |
 
-当前默认本地单实例。网页和脚本客户端通过同一业务接口访问该实例；Git 只同步代码，不同步运行数据。
+## 知识数据流
 
-## 已有 API
+1. `MYOPC_KNOWLEDGE_DIR` 指向知识仓库检出目录（服务器上只读挂载）。
+2. 同步读取 `projects/`、`tools/`、`notes/` 下的 Markdown，校验 `id`、`kind` 与目录一致，计算内容哈希。
+3. 新增或内容变化的条目写入 `knowledge_entries`；从仓库消失的条目标记 `visible=0`，不再出现在页面，也不删除历史结果。
+4. 需要加工的条目（新增、内容变化、规程变化或上次失败）进入待加工队列。
+5. 加工按规程请求模型，输出经校验后写入 `knowledge_reading_notes`，记录来源哈希、规程版本、模型和生成时间。
+6. 失败时保留上一次可用内容，只更新状态与错误信息；页面显示失败原因并允许重试。
 
-以 route.ts 及 business.ts 为准，以下是当前入口概览：
+一条内容重复同步不会重复写入；相同来源哈希 + 相同规程版本直接复用结果，不调用模型。
 
-| 方法 | 路径（前缀 /api/v1） |
+## 数据表
+
+| 表 | 内容 |
 | --- | --- |
-| GET | /health、/dashboard、/library、/events |
-| GET | /captures、/captures/:id、/captures/:id/file |
-| GET | /methods、/methods/:id、/projects、/projects/:id |
-| GET | /context?trial_id=... |
-| POST | /captures、/methods、/projects、/projects/:id/locations |
-| POST | /starts、/trials、/drafts、/deliverables |
-| POST | /deliverables/:id/versions、/deliverables/:id/accept |
-| POST | /feedback、/decisions |
-| PATCH | /captures/:id、/projects/:id、/trials/:id |
+| knowledge_entries | 条目索引：类型、标题、摘要、状态、标签、来源、正文、相对路径、内容哈希、可见性 |
+| knowledge_reading_notes | 每个条目的阅读说明：规程版本、来源哈希、模型、状态、内容、错误、生成时间 |
+| knowledge_sync_state | 最近一次同步的目录、仓库、分支、提交、计数和时间 |
 
-请求载荷与约束参考业务函数和 tests/business.test.ts。不要将历史候选 API 当成已实现接口。
+前端不直接写库，全部经 HTTP 接口；模型只由服务端调用。
 
-## 业务数据
+## API
 
-素材、方法版本、项目、行动、成果版本、反馈、决策和事件通过稳定 ID 关联。
-成果与方法修订创建新版本，历史引用保留。采用记录指向具体成果版本。
+| 方法 | 路径（前缀 /api/v1） | 说明 |
+| --- | --- | --- |
+| GET | /knowledge | 同步状态、模型配置、待加工数量与条目列表（可选 `kind`、`q`） |
+| GET | /knowledge/entries/:id | 条目详情：阅读说明内容、原文、来源与关联条目 |
+| POST | /knowledge/sync | 重新读取知识目录并更新索引 |
+| POST | /knowledge/notes | 生成或重新生成单个条目的阅读说明（`entry_id`、`force`） |
+| POST | /knowledge/process | 批量加工待处理条目（`limit`，单次最多 10 条） |
+| GET | /health、/dashboard、/library、/events | 运行与历史数据概览 |
+| GET | /captures、/captures/:id、/captures/:id/file | 历史素材读取 |
+| GET | /methods、/methods/:id、/projects、/projects/:id | 历史方法、项目读取 |
+| GET | /context?trial_id= | 行动上下文 |
+| POST | /captures、/methods、/projects、/projects/:id/locations、/trials、/deliverables、/drafts、/feedback、/decisions | 历史业务写入 |
+| PATCH | /captures/:id、/projects/:id、/trials/:id | 历史业务更新 |
 
-写入使用 X-Client-Request-Id；相同编号不同载荷拒绝写入。可变项目与行动使用 expected_revision；成果新版本使用 expected_previous_version_id。
-这些机制是已有业务行为，文档精简不改变接口契约。
+历史接口的幂等与版本冲突规则保持不变（`X-Client-Request-Id`、`expected_revision`、`expected_previous_version_id`）。
 
-数据库和素材保存在运行数据目录，MYOPC_DATA_DIR 可指定位置。备份与运行方式见 DEPLOYMENT.md。
-本地多实例各有数据，不自动同步。后续共享部署可让多个客户端访问同一服务。
+## 配置
 
-## Easel 连接
+| 变量 | 说明 |
+| --- | --- |
+| MYOPC_DATA_DIR | 运行数据目录（数据库、备份）；服务器上指向持久卷 |
+| MYOPC_KNOWLEDGE_DIR | 知识仓库检出目录；必须可读 |
+| MYOPC_KNOWLEDGE_REPO | 知识仓库标识，用于生成原文链接（默认 `kioooice/MYOPC-Knowledge`） |
+| MYOPC_MODEL、MYOPC_MODEL_BASE_URL、MYOPC_MODEL_API_KEY | 模型与凭据；未配置密钥时同步与浏览仍可用 |
+| MYOPC_MODEL_TIMEOUT_MS、MYOPC_MODEL_MAX_TOKENS | 请求超时与输出上限（默认 60000ms / 4000） |
 
-Easel 独立运行。本仓库尚无完成的 Easel 自动任务适配器。
-当前可手动交接素材、正文和产物引用，开发连接时依据实际安装版本核对接口。
-双方分别管理自己的数据，避免直接修改对方数据库。
+密钥只放运行环境，不进入 Git，也不写入知识仓库。
 
-不要求为正常项目开发建设 MCP、模型路由、云端浏览器入口或通用任务编排。
+## 已不再使用的部分
+
+素材收纳、行动、成果版本与反馈的页面入口已从主要流程移除，代码与数据保留以便查阅历史。`lib/business.ts` 中的相关实现仍在服务端可用，未被前端调用。

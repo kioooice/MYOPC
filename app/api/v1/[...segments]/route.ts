@@ -1,20 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { acceptVersion, BusinessError, createCapture, createDecision, createDeliverable, createDraft, createFeedback, createMethod, createProject, createProjectLocation, createTrial, createVersion, getAssets, getCapture, getCaptureFile, getCaptures, getContext, getDashboard, getEvents, getMethod, getMethods, getProject, getProjects, getLibrary, startTrial, updateCapture, updateProject, updateTrial } from "@/lib/business";
+import { KnowledgeError } from "@/lib/knowledge/repo";
+import { generateKnowledgeNote, getKnowledgeDetail, getKnowledgeOverview, processKnowledgeNotes, syncKnowledge } from "@/lib/knowledge/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Context = { params: Promise<{ segments: string[] }> };
 
+function errorResponse(error: unknown) {
+  if (error instanceof BusinessError) return NextResponse.json({ error: error.code, message: error.message, details: error.details }, { status: error.status });
+  if (error instanceof KnowledgeError) {
+    const status = error.code === "knowledge_entry_not_found" ? 404 : error.code === "knowledge_directory_missing" ? 400 : 502;
+    return NextResponse.json({ error: error.code, message: error.message }, { status });
+  }
+  console.error(error);
+  return NextResponse.json({ error: "internal_error", message: "服务暂时不可用" }, { status: 500 });
+}
+
 function respond(operation: () => { status: number; body: Record<string, unknown> }) {
   try {
     const result = operation();
     return NextResponse.json(result.body, { status: result.status });
   } catch (error) {
-    if (error instanceof BusinessError) return NextResponse.json({ error: error.code, message: error.message, details: error.details }, { status: error.status });
-    console.error(error);
-    return NextResponse.json({ error: "internal_error", message: "服务暂时不可用" }, { status: 500 });
+    return errorResponse(error);
   }
+}
+
+async function readBody(request: NextRequest) {
+  try { return await request.json() as Record<string, unknown>; }
+  catch { return {} as Record<string, unknown>; }
 }
 
 export async function GET(request: NextRequest, context: Context) {
@@ -24,6 +39,17 @@ export async function GET(request: NextRequest, context: Context) {
     if (segments[0] === "dashboard") return NextResponse.json(getDashboard());
     if (segments[0] === "library") return NextResponse.json(getLibrary(request.nextUrl.searchParams.get("q") || ""));
     if (segments[0] === "assets") return NextResponse.json(getAssets(request.nextUrl.searchParams.get("q") || ""));
+    if (segments[0] === "knowledge" && segments[1] === "entries" && segments[2]) {
+      const detail = getKnowledgeDetail(segments[2]);
+      if (!detail) return NextResponse.json({ error: "not_found", message: "知识条目不存在" }, { status: 404 });
+      return NextResponse.json(detail);
+    }
+    if (segments[0] === "knowledge") {
+      return NextResponse.json(getKnowledgeOverview({
+        kind: request.nextUrl.searchParams.get("kind") || undefined,
+        query: request.nextUrl.searchParams.get("q") || undefined,
+      }));
+    }
     if (segments[0] === "captures" && segments[1] && segments[2] === "file") {
       const file = getCaptureFile(segments[1]);
       return new NextResponse(new Uint8Array(file.content), { headers: { "content-type": file.mimeType, "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}` } });
@@ -38,16 +64,34 @@ export async function GET(request: NextRequest, context: Context) {
     if (segments[0] === "events") return NextResponse.json(getEvents(Number(request.nextUrl.searchParams.get("after") || 0)));
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   } catch (error) {
-    if (error instanceof BusinessError) return NextResponse.json({ error: error.code, message: error.message }, { status: error.status });
-    return NextResponse.json({ error: "internal_error" }, { status: 500 });
+    return errorResponse(error);
   }
 }
 
 export async function POST(request: NextRequest, context: Context) {
   const { segments } = await context.params;
-  const body = await request.json() as Record<string, unknown>;
+  const body = await readBody(request);
   const requestId = request.headers.get("x-client-request-id") || undefined;
   const key = segments.join("/");
+  try {
+    if (key === "knowledge/sync") {
+      const result = syncKnowledge();
+      return NextResponse.json({ sync: result.state, summary: result.summary, problems: result.problems, pendingNotes: getKnowledgeOverview().pendingNotes }, { status: 200 });
+    }
+    if (key === "knowledge/notes") {
+      const entryId = typeof body.entry_id === "string" ? body.entry_id.trim() : "";
+      if (!entryId) throw new BusinessError(400, "entry_id_required", "缺少 entry_id");
+      const result = await generateKnowledgeNote(entryId, { force: body.force === true });
+      return NextResponse.json(result, { status: 200 });
+    }
+    if (key === "knowledge/process") {
+      const limit = Number(body.limit);
+      const result = await processKnowledgeNotes(Number.isFinite(limit) && limit > 0 ? limit : 3);
+      return NextResponse.json(result, { status: 200 });
+    }
+  } catch (error) {
+    return errorResponse(error);
+  }
   return respond(() => {
     if (key === "captures") return createCapture(body, requestId);
     if (key === "starts") return startTrial(body, requestId);
@@ -67,7 +111,7 @@ export async function POST(request: NextRequest, context: Context) {
 
 export async function PATCH(request: NextRequest, context: Context) {
   const { segments } = await context.params;
-  const body = await request.json() as Record<string, unknown>;
+  const body = await readBody(request);
   const requestId = request.headers.get("x-client-request-id") || undefined;
   return respond(() => {
     if (segments[0] === "captures" && segments[1]) return updateCapture(segments[1], body, requestId);

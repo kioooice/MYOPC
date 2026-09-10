@@ -1,44 +1,32 @@
 # 当前状态
 
-## 当前工作方式
+## 本轮改造（2026-09-10）
 
-用户当前在本地部署 OPC 和 Easel，项目回归本地开发、运行和按需求迭代。
-本次整理先以本地为开发基准，随后已将收敛改造部署到 `opc-cloud`；本地与服务器均已完成入口核对。
+OPC 从“自建素材、行动与成果的工作台”改为**读取独立知识仓库、按规程生成阅读说明、再由页面展示**。内容源是私有仓库 `kioooice/MYOPC-Knowledge`，OPC 只读该仓库；素材收藏仍归 Karakeep，内容运营仍归 Easel。历史业务数据（素材、行动、成果版本、反馈）保留在数据库里，只是不再作为主要流程。
 
-旧服务器站点、opc-cloud、Tailscale 和公网入口建设记录均不再作为当前运行状态或开发前置要求。当前地址以本机启动输出为准。
+### 已实现
 
-## 2026-09-09 收敛改造
+- 知识解析与索引：`lib/knowledge/`（YAML 子集解析、快照读取、SQLite 索引、同步状态）。
+- 模型加工：“阅读说明”规程 `reading-note-v1`，输出分为原文事实、关键选择与依据、步骤、适用条件、仍未确定、模型推断；校验失败会带着更严格的提示重试一次，被截断时提高输出上限重试。
+- 数据表：`knowledge_entries`、`knowledge_reading_notes`、`knowledge_sync_state`（migration 10）。
+- 接口：`GET /api/v1/knowledge`、`GET /api/v1/knowledge/entries/:id`、`POST /api/v1/knowledge/sync|notes|process`。
+- 页面：总览、项目、工具、空间改为知识条目视图；条目详情显示阅读说明、原文、来源、更新时间与加工状态；同步与加工在页面上手动触发。
+- 命令行：`npx tsx scripts/knowledge-sync.ts`（同步 + 按需加工），可直接用于定时任务。
 
-首页与一级导航已收敛为“项目 / 工具 / 空间”三块个人资产视角：Projects 展示当前项目，Toolbox 展示可调用工具记录，Space 展示方法与实践沉淀。原有行动、成果、反馈、素材和方法 API 及数据库表保留，作为项目历史与资产来源，不删除已有数据。
+### 已验证（本地）
 
-本轮只做信息架构和首页语义收敛，没有把 Karakeep、Project Observer 或 Easel 的职责复制进 OPC，也没有新增自动同步或复杂知识图谱。工具记录仍以现有 captures 数据为基础，只有明确的工具类记录进入 Toolbox；普通外部素材不再默认等于工具。
+- `npm test`：30 项通过，其中 11 项覆盖知识解析、同步幂等、内容变化、删除不可见、模型失败保留上一次结果。
+- `npm run lint`、`npx tsc --noEmit` 通过。
+- 真实知识仓库实跑：同步 17 条（6 项目、7 工具、4 笔记），提交 `44bb709`；用 `deepseek-flash` 生成 17 份阅读说明，全部 `ready`，来源哈希与规程版本随结果保存。
+- 浏览器实测：总览显示同步状态与最近更新；项目列表 6 条；MYOPC 详情页显示阅读说明（原文事实、关键选择等）、生成/重新生成按钮与入口链接。
 
-已验证：`npm test`（18 项通过）、`npm run lint`、`npm run build`，本地开发服务器 `http://127.0.0.1:3000` 可打开，首页显示三块新导航；服务器提交、容器发布标记与本地/GitHub 一致，服务器入口返回 HTTP 200。真实用户数据未做迁移，沿用原 SQLite 数据目录。
+### 未验证
 
-随后补齐了资产内容与独立模型：新增 `tools`、`space_entries` 以及 Project/Tool/Space 三类关联表，并提供 `/api/v1/assets`。根据 GitHub、本机和服务器现场核查，幂等写入 MYOPC、Project Observer、Helm、ScholarScope、Knowledge Engine、Enterprise Agent 六个项目；写入 Project Observer、Easel、Karakeep、AutoDL、H3、GitHub、Codex 和私人云部署工作流八项 Toolbox 资产；写入三条部署与产品边界 Space 资产。AutoDL/H3 未伪称已验证，保留“尝试中/待核对”状态。
+- 服务器尚未部署本次改造，`:3010` 仍是上一版；知识仓库尚未在服务器上检出，也没有配置定时同步。
+- 未从第二台设备访问服务器确认同一份内容。
+- 尚未接入收集对话的实际产出（`sources.yaml` 里的 collected_commit 仍多为 pending）。
+- 模型输出的质量只按结构校验，未逐条人工复核；`inferences` 是模型推断，不是已验证事实。
 
-补充后验证：`npm test`（19 项通过）、`npm run lint`、`npm run build`；本地 `/api/v1/assets` 返回 8 个工具和 3 条 Space 内容，`/api/v1/projects` 返回 6 个核实项目。旧表与已有数据不删除，新种子使用稳定 ID 和 `INSERT OR IGNORE` 避免重复。
+## 历史
 
-## 仓库已有实现
-
-- Next.js / React / TypeScript Web 应用，SQLite 持久化。
-- Windows 启动入口 start.bat / start.ps1。
-- 素材收纳、文件读取、搜索、方法及其版本。
-- 项目、行动、成果版本、反馈、采用和下一步记录。
-- /api/v1 HTTP 接口、continuity 脚本客户端。
-- 请求幂等、部分可变对象 revision 冲突检查。
-- 数据库备份、校验与隔离恢复工具。
-
-以上为仓库代码能力清单，不等于本次全部重新实测。
-
-## 尚未确认或完成
-
-- 本轮本地 OPC 与 Easel 的实际启动及使用结果。
-- OPC 与 Easel 的自动任务交接、产物回收和状态同步。
-- 真实内容生产与运营效果。
-
-本地成功启动后记录简短结果即可。后续工作统一见 [TASKS.md](../TASKS.md)，不继续维护多套阶段验收状态。
-
-## 历史记录
-
-ACCEPTANCE_REVIEW.md、REACCEPTANCE.md、S0_EVIDENCE.md 保留为历史技术记录；其中提交、服务器地址、测试数量和未验事项只对应当时，不代表当前待办。
+旧服务器、域名与 Tailscale 记录不代表当前状态。`ACCEPTANCE_REVIEW.md`、`REACCEPTANCE.md`、`S0_EVIDENCE.md` 只对应当时。
