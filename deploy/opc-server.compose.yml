@@ -5,6 +5,8 @@ services:
   myopc:
     build:
       context: ..
+      args:
+        DEBIAN_MIRROR: mirrors.tencent.com
     container_name: myopc
     restart: unless-stopped
     env_file:
