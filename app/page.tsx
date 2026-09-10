@@ -53,12 +53,20 @@ export default function Home() {
     if (!quiet) setLoading(true);
     setRefreshing(true);
     try {
-      const [dashboardResponse, knowledgeResponse] = await Promise.all([
-        fetch("/api/v1/dashboard", { cache: "no-store" }),
-        fetch("/api/v1/knowledge", { cache: "no-store" }),
-      ]);
-      if (!dashboardResponse.ok || !knowledgeResponse.ok) throw new Error("读取工作台失败，请检查连接后重试");
-      const [data, knowledgeData] = await Promise.all([dashboardResponse.json(), knowledgeResponse.json()]) as [{ trials: Trial[]; latest_event_sequence?: number }, KnowledgeOverviewResponse];
+      // 后台轮询遇到瞬时失败时先静默重试一次，避免闪一下错误提示；用户主动刷新仍然直接报错。
+      const readWorkspace = async () => {
+        const [dashboardResponse, knowledgeResponse] = await Promise.all([
+          fetch("/api/v1/dashboard", { cache: "no-store" }),
+          fetch("/api/v1/knowledge", { cache: "no-store" }),
+        ]);
+        if (!dashboardResponse.ok || !knowledgeResponse.ok) throw new Error("读取工作台失败，请检查连接后重试");
+        return Promise.all([dashboardResponse.json(), knowledgeResponse.json()]) as Promise<[{ trials: Trial[]; latest_event_sequence?: number }, KnowledgeOverviewResponse]>;
+      };
+      let [data, knowledgeData] = await readWorkspace().catch(async (cause) => {
+        if (!quiet) throw cause;
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+        return readWorkspace();
+      });
       setTrials(data.trials);
       setKnowledge(knowledgeData.entries || []);
       setKnowledgeSync(knowledgeData.sync);
