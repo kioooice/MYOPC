@@ -2,7 +2,7 @@ import { KnowledgeError } from "./repo";
 import { countEntriesNeedingNote, getKnowledgeEntry, getReadingNote, listEntriesNeedingNote, saveReadingNote, type KnowledgeEntryRecord, type ReadingNoteContent, type ReadingNoteRecord } from "./store";
 import { callChatModel, getModelConfig } from "./model";
 
-export const PROMPT_VERSION = "reading-note-v3";
+export const PROMPT_VERSION = "reading-note-v4";
 const MAX_BODY_CHARS = 12000;
 
 const SYSTEM_PROMPT = [
@@ -11,7 +11,7 @@ const SYSTEM_PROMPT = [
   "区分原文事实与你的推断：原文写明的放 facts，你自己推出的放 inferences。",
   "没有内容的栏目返回空数组，不要为了凑满而编造。",
   "brief 要短：不超过 24 个汉字，能独立看懂，不要用省略号或断句。",
-  "card 是一段完整的话：不超过 120 个汉字，不要分点、不要省略号，读者只看这段也能知道它是什么、现在什么状态。",
+  "card 是一段完整的话：不超过 90 个汉字（大约三行），不要分点、不要省略号，读者只看这段也能知道它是什么、现在什么状态。",
   "只输出 JSON，不要输出解释、Markdown 代码块或多余文字。",
 ].join("\n");
 
@@ -21,7 +21,7 @@ function schemaHint() {
     "{",
     '  "summary": "一段话说明这个条目在讲什么（详细页用）",',
     '  "brief": "首页用的一句话简介，不超过 24 个字，必须是完整句子，不要省略号",',
-    '  "card": "列表卡用的介绍，不超过 120 个字，完整成句，不分段，说明它是什么和当前关键状态",',
+    '  "card": "列表卡用的介绍，不超过 90 个字，完整成句，不分段，说明它是什么和当前关键状态",',
     '  "facts": ["原文明确写出的事实"],',
     '  "decisions": [{"title": "关键选择", "detail": "选择内容与依据"}],',
     '  "steps": ["操作步骤"],',
