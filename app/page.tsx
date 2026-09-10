@@ -9,7 +9,7 @@ type Version = { id: string; ordinal: number; content: string; created_at?: stri
 type Deliverable = { id: string; title: string; type: string; accepted_version_id: string | null; review_status?: string; created_at?: string; versions: Version[] };
 type Decision = { id: string; rationale: string; adjustment: string; next_step: string; execution_status: string };
 type Trial = { id: string; title: string; goal: string; status: string; revision: number; project_id?: string | null; project?: { id: string; name: string; category: string } | null; code_repository?: string | null; code_branch?: string | null; code_commit?: string | null; next_step?: string | null; method: null | { title: string; revision_label: string; purpose: string; steps: string[] }; capture: null | { title: string; kind: string; source?: string }; captures?: Array<{ id: string; title: string; kind: string }>; deliverables: Deliverable[]; decisions: Decision[] };
-type KnowledgeNote = { status: "ready" | "failed" | "missing"; model: string | null; generatedAt: string | null; error: string | null; summary: string | null; brief: string | null };
+type KnowledgeNote = { status: "ready" | "failed" | "missing"; model: string | null; generatedAt: string | null; error: string | null; summary: string | null; brief: string | null; card: string | null };
 type KnowledgeItem = { id: string; kind: string; title: string; summary: string; status: string; tags: string[]; updatedAt: string | null; link: string | null; relPath: string; sourceUrls: string[]; note: KnowledgeNote };
 type KnowledgeNoteContent = { summary: string; facts: string[]; decisions: Array<{ title: string; detail: string }>; steps: string[]; conditions: string[]; open_questions: string[]; inferences: string[] };
 type KnowledgeDetail = KnowledgeItem & { body: string; sources: Array<{ label: string; url: string | null }>; related: Array<{ id: string; title: string; kind: string; status: string }>; noteContent: KnowledgeNoteContent | null; promptVersion: string };
@@ -347,7 +347,7 @@ function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" |
       : <div className="asset-grid">{items.map((item) => <article className="asset-card knowledge-card" key={item.id}>
         <div className="asset-card-head"><span>{item.status || meta.eyebrow}</span><b>{item.note.status === "ready" ? "已有阅读说明" : item.note.status === "failed" ? "加工失败" : "待生成"}</b></div>
         <h2>{item.title}</h2>
-        <p>{item.note.summary || item.summary || "暂无摘要"}</p>
+        <p>{item.note.card || item.note.summary || item.summary || "暂无摘要"}</p>
         {item.tags.length > 0 && <div className="tag-row">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
         <dl>
           <div><dt>更新</dt><dd>{item.updatedAt || "未标注"}</dd></div>

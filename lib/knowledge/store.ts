@@ -23,6 +23,8 @@ export type ReadingNoteContent = {
   summary: string;
   /** 首页用的一句话简介，控制在 24 字以内。 */
   brief: string;
+  /** 列表卡用的介绍，控制在 120 字以内、完整成句、不分段。 */
+  card: string;
   facts: string[];
   decisions: Array<{ title: string; detail: string }>;
   steps: string[];

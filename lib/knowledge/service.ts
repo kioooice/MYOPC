@@ -22,6 +22,7 @@ export type KnowledgeNoteSummary = {
   error: string | null;
   summary: string | null;
   brief: string | null;
+  card: string | null;
 };
 
 export type KnowledgeListItem = {
@@ -52,7 +53,7 @@ function sourceLabel(source: KnowledgeSourceRef) {
 
 function noteSummary(entryId: string, contentHash: string): KnowledgeNoteSummary {
   const note = getReadingNote(entryId);
-  if (!note) return { status: "missing", model: null, generatedAt: null, error: null, summary: null, brief: null };
+  if (!note) return { status: "missing", model: null, generatedAt: null, error: null, summary: null, brief: null, card: null };
   const stale = note.sourceHash !== contentHash || note.promptVersion !== PROMPT_VERSION;
   const status = note.status === "ready" && !stale ? "ready" : note.content ? "ready" : "failed";
   return {
@@ -62,6 +63,7 @@ function noteSummary(entryId: string, contentHash: string): KnowledgeNoteSummary
     error: note.error,
     summary: note.content?.summary ?? null,
     brief: note.content?.brief ?? null,
+    card: note.content?.card ?? null,
   };
 }
 
@@ -136,8 +138,9 @@ export function getKnowledgeList(options: { kind?: string; query?: string } = {}
             error: note.error,
             summary: note.content?.summary ?? null,
             brief: note.content?.brief ?? null,
+            card: note.content?.card ?? null,
           }
-        : { status: "missing", model: null, generatedAt: null, error: null, summary: null, brief: null },
+        : { status: "missing", model: null, generatedAt: null, error: null, summary: null, brief: null, card: null },
     };
   });
 }
