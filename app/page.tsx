@@ -78,6 +78,12 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(""), 6000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
     const restored = loadPendingWrite(window.sessionStorage);
     if (restored) pendingWriteRef.current = restored;
     const restore = restored ? window.setTimeout(() => { setPendingWrite(restored); }, 0) : null;
@@ -92,6 +98,7 @@ export default function Home() {
   const knowledgeProjects = useMemo(() => knowledge.filter((item) => item.kind === "project"), [knowledge]);
   const knowledgeTools = useMemo(() => knowledge.filter((item) => item.kind === "tool"), [knowledge]);
   const knowledgeNotes = useMemo(() => knowledge.filter((item) => item.kind === "note"), [knowledge]);
+  const knowledgeTooltip = [knowledgeSync?.commit ? `知识仓库 ${knowledgeSync.commit.slice(0, 8)}` : "知识仓库未同步", knowledgeSync?.finishedAt ? new Date(knowledgeSync.finishedAt).toLocaleString("zh-CN") : "", knowledgeModel?.configured ? `模型 ${knowledgeModel.model}` : "模型未配置", pendingNotes > 0 ? `${pendingNotes} 条待加工` : "阅读说明已就绪"].filter(Boolean).join(" · ");
   const recentKnowledge = useMemo(() => [...knowledge].sort((left, right) => (right.updatedAt || "").localeCompare(left.updatedAt || "")).slice(0, 5), [knowledge]);
   const activeTrials = useMemo(() => trials.filter((item) => item.status === "in_progress" || item.status === "review"), [trials]);
   const openFeedbackCount = useMemo(() => trials.flatMap((item) => item.deliverables).flatMap((item) => item.versions).flatMap((item) => item.feedback).filter((item) => item.status === "open").length, [trials]);
@@ -243,18 +250,18 @@ export default function Home() {
     </aside>
 
     <section className="main-panel">
-      <header className="main-header"><button className="icon-button menu-button" onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}>{sidebarOpen ? <Menu size={19} /> : <PanelLeftOpen size={19} />}</button><div className="breadcrumb"><span>工作台</span>{trial && <><ChevronLeft size={13} className="crumb-arrow" /><strong>{trial.title}</strong></>}{entry && !trial && <><ChevronLeft size={13} className="crumb-arrow" /><strong>{entry.title}</strong></>}</div><div className="header-sync"><span title={knowledgeSync?.commit ? `知识仓库 ${knowledgeSync.commit.slice(0, 8)}` : undefined}>{knowledgeSync?.finishedAt ? `知识 ${new Date(knowledgeSync.finishedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}` : lastSyncedAt ? `已同步 ${shortTime(lastSyncedAt.toISOString())}` : "等待同步"}</span><button className="icon-button" onClick={() => void load()} disabled={refreshing} title="刷新共享状态" aria-label="刷新共享状态"><RefreshCw size={15} className={refreshing ? "spin" : ""} /></button></div></header>
+      <header className="main-header"><button className="icon-button menu-button" onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}>{sidebarOpen ? <Menu size={19} /> : <PanelLeftOpen size={19} />}</button><div className="breadcrumb"><span>工作台</span>{trial && <><ChevronLeft size={13} className="crumb-arrow" /><strong>{trial.title}</strong></>}{entry && !trial && <><ChevronLeft size={13} className="crumb-arrow" /><strong>{entry.title}</strong></>}</div><div className="header-sync" title={knowledgeTooltip}><span>{knowledgeSync?.finishedAt ? `知识 ${new Date(knowledgeSync.finishedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}` : "未同步"}</span><button className="header-action" onClick={() => void syncKnowledge()} disabled={knowledgeBusy} title="同步知识仓库并更新索引">{knowledgeBusy ? "处理中…" : "同步"}</button><button className="header-action" onClick={() => void processPending()} disabled={knowledgeBusy || pendingNotes === 0 || !knowledgeModel?.configured} title={pendingNotes > 0 ? `生成 ${pendingNotes} 条阅读说明` : "没有待加工的条目"}>{pendingNotes > 0 ? `加工 ${pendingNotes}` : "加工"}</button><button className="icon-button" onClick={() => void load()} disabled={refreshing} title="刷新共享状态" aria-label="刷新共享状态"><RefreshCw size={15} className={refreshing ? "spin" : ""} /></button></div></header>
       <div className="content">
         {pendingWrite && <div className="pending-write-banner"><CircleAlert size={16} /><span><strong>{pendingWrite.label}尚未确认</strong><small>请求已保留；读取成功不代表写入响应已确认。</small></span><button className="retry-button" onClick={() => void retryWrite()} disabled={busy}>重试原请求</button></div>}
         {error && <div className="error-banner"><CircleAlert size={16} /><span>{error}</span>{!pendingWrite && <button className="retry-button" onClick={() => void load()}>重新连接</button>}<button onClick={() => setError("")} aria-label="关闭提示"><X size={16} /></button></div>}
         {loading && <div className="loading-state">正在读取共享工作状态…</div>}
         {notice && <div className="notice-banner"><CheckCircle2 size={15} /><span>{notice}</span><button onClick={() => setNotice("")} aria-label="关闭提示"><X size={15} /></button></div>}
-        {!loading && view === "overview" && !trial && <OverviewView projects={knowledgeProjects} tools={knowledgeTools} notes={knowledgeNotes} recent={recentKnowledge} sync={knowledgeSync} model={knowledgeModel} pendingNotes={pendingNotes} busy={knowledgeBusy} onOpen={openEntry} onNavigate={goTo} onSync={() => void syncKnowledge()} onProcess={() => void processPending()} />}
+        {!loading && view === "overview" && !trial && <OverviewView projects={knowledgeProjects} tools={knowledgeTools} notes={knowledgeNotes} recent={recentKnowledge} onOpen={openEntry} onNavigate={goTo} />}
         {view === "entry" && entryLoading && <div className="loading-state">正在读取条目…</div>}
         {view === "entry" && !entryLoading && entry && <KnowledgeDetailView entry={entry} busy={knowledgeBusy} model={knowledgeModel} onBack={() => goTo(lastEntrySection)} onGenerate={(id, force) => void generateNote(id, force)} />}
-        {!loading && !trial && view === "projects" && <KnowledgeListView kind="project" items={knowledgeProjects} sync={knowledgeSync} model={knowledgeModel} pendingNotes={pendingNotes} onOpen={openEntry} />}
-        {!loading && !trial && view === "toolbox" && <KnowledgeListView kind="tool" items={knowledgeTools} sync={knowledgeSync} model={knowledgeModel} pendingNotes={pendingNotes} onOpen={openEntry} />}
-        {!loading && !trial && view === "space" && <KnowledgeListView kind="note" items={knowledgeNotes} sync={knowledgeSync} model={knowledgeModel} pendingNotes={pendingNotes} onOpen={openEntry} />}
+        {!loading && !trial && view === "projects" && <KnowledgeListView kind="project" items={knowledgeProjects} onOpen={openEntry} />}
+        {!loading && !trial && view === "toolbox" && <KnowledgeListView kind="tool" items={knowledgeTools} onOpen={openEntry} />}
+        {!loading && !trial && view === "space" && <KnowledgeListView kind="note" items={knowledgeNotes} onOpen={openEntry} />}
         {!loading && !trial && view === "active" && <ListView title="进行中的行动" subtitle="从这里继续目标、产物和反馈；审阅中的行动也保留在这里。" trials={activeTrials} onOpen={openTrial} empty="还没有进行中的行动" />}
         {!loading && !trial && view === "inbox" && <InboxView trials={trials} onOpen={openTrial} />}
         {!loading && !trial && view === "deliverables" && <DeliverablesView trials={trials} onOpen={openTrial} />}
@@ -320,20 +327,7 @@ function renderMarkdown(body: string) {
   return nodes;
 }
 
-function KnowledgeBar({ sync, model, pendingNotes, actions, busy, onSync, onProcess }: { sync: KnowledgeSync | null; model: KnowledgeOverviewResponse["model"] | null; pendingNotes: number; actions?: boolean; busy?: boolean; onSync?: () => void; onProcess?: () => void }) {
-  return <div className="knowledge-bar">
-    <span>知识仓库 {sync?.commit ? sync.commit.slice(0, 8) : "未同步"}{sync?.finishedAt ? ` · ${new Date(sync.finishedAt).toLocaleString("zh-CN")}` : ""}</span>
-    <span>{model?.configured ? `模型 ${model.model}` : "模型未配置"}</span>
-    <span>{pendingNotes > 0 ? `${pendingNotes} 条待加工` : "阅读说明已就绪"}</span>
-    {sync?.message && <span className="knowledge-warn">{sync.message}</span>}
-    {actions !== false && <div className="knowledge-bar-actions">
-      <button onClick={onSync} disabled={busy}>{busy ? "处理中…" : "同步知识仓库"}</button>
-      {pendingNotes > 0 && model?.configured && <button onClick={onProcess} disabled={busy}>加工 {Math.min(pendingNotes, 3)} 条</button>}
-    </div>}
-  </div>;
-}
-
-function KnowledgeListView({ kind, items, sync, model, pendingNotes, onOpen }: { kind: "project" | "tool" | "note"; items: KnowledgeItem[]; sync: KnowledgeSync | null; model: KnowledgeOverviewResponse["model"] | null; pendingNotes: number; onOpen: (id: string, kind: string) => void }) {
+function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" | "note"; items: KnowledgeItem[]; onOpen: (id: string, kind: string) => void }) {
   const meta = kind === "project"
     ? { eyebrow: "Projects", title: "项目", subtitle: "来自知识仓库的项目概况；原文、来源和模型阅读说明都在同一条目里。" }
     : kind === "tool"
@@ -341,7 +335,6 @@ function KnowledgeListView({ kind, items, sync, model, pendingNotes, onOpen }: {
       : { eyebrow: "Space", title: "空间", subtitle: "经过实践留下的方法、经验与判断。" };
   return <div className="asset-view">
     <div className="view-title"><span className="eyebrow">{meta.eyebrow}</span><h1>{meta.title}</h1><p>{meta.subtitle}</p></div>
-    <KnowledgeBar sync={sync} model={model} pendingNotes={pendingNotes} actions={false} />
     {items.length === 0
       ? <div className="quiet-empty"><BookOpen size={22} /><p>知识仓库里还没有{meta.title}条目</p></div>
       : <div className="asset-grid">{items.map((item) => <article className="asset-card knowledge-card" key={item.id}>
@@ -405,15 +398,14 @@ function KnowledgeDetailView({ entry, busy, model, onBack, onGenerate }: { entry
   </div>;
 }
 
-function OverviewView({ projects, tools, notes, recent, sync, model, pendingNotes, busy, onOpen, onNavigate, onSync, onProcess }: { projects: KnowledgeItem[]; tools: KnowledgeItem[]; notes: KnowledgeItem[]; recent: KnowledgeItem[]; sync: KnowledgeSync | null; model: KnowledgeOverviewResponse["model"] | null; pendingNotes: number; busy: boolean; onOpen: (id: string, kind: string) => void; onNavigate: (view: View) => void; onSync: () => void; onProcess: () => void }) {
+function OverviewView({ projects, tools, notes, recent, onOpen, onNavigate }: { projects: KnowledgeItem[]; tools: KnowledgeItem[]; notes: KnowledgeItem[]; recent: KnowledgeItem[]; onOpen: (id: string, kind: string) => void; onNavigate: (view: View) => void }) {
   return <div className="overview-view">
-    <section className="overview-hero"><div className="overview-intro"><span className="eyebrow">个人资产空间</span><h1>我在做什么、能用什么、留下了什么</h1><p>项目、工具和空间都来自独立知识仓库；OPC 同步内容、按规程生成阅读说明并展示。</p></div><div className="codex-note"><span><Sparkles size={18} /></span><div><strong>{sync?.status === "ok" ? "知识已同步" : sync?.status === "failed" ? "同步失败" : "尚未同步"}</strong><small>{sync?.commit ? sync.commit.slice(0, 8) : "等待第一次同步"}{sync?.finishedAt ? ` · ${new Date(sync.finishedAt).toLocaleString("zh-CN")}` : ""}</small></div></div></section>
+    <section className="overview-hero"><div className="overview-intro"><span className="eyebrow">个人资产空间</span><h1>我在做什么、能用什么、留下了什么</h1><p>项目、工具和空间都来自独立知识仓库；OPC 同步内容、按规程生成阅读说明并展示。</p></div><div className="codex-note"><span><Sparkles size={18} /></span><div><strong>知识驱动</strong><small>内容来自知识仓库，OPC 负责同步与加工</small></div></div></section>
     <div className="overview-stats">
       <button onClick={() => onNavigate("projects")}><span>项目</span><strong>{projects.length}</strong><small>查看 Projects <ChevronRight size={13} /></small></button>
       <button onClick={() => onNavigate("toolbox")}><span>可调用工具</span><strong>{tools.length}</strong><small>查看 Toolbox <ChevronRight size={13} /></small></button>
       <button onClick={() => onNavigate("space")}><span>知识与方法</span><strong>{notes.length}</strong><small>查看 Space <ChevronRight size={13} /></small></button>
     </div>
-    <KnowledgeBar sync={sync} model={model} pendingNotes={pendingNotes} busy={busy} onSync={onSync} onProcess={onProcess} />
     <section className="overview-section">
       <div className="overview-section-head"><div><span className="eyebrow">最近更新</span><h2>知识仓库里最近变化的条目</h2></div><button className="text-button" onClick={() => onNavigate("projects")}>打开 Projects <ChevronRight size={14} /></button></div>
       {recent.length === 0 ? <div className="overview-empty"><span className="overview-empty-icon"><BookOpen size={22} /></span><h2>还没有同步内容</h2><p>先同步知识仓库，或在收集对话里整理出第一条条目。</p></div> : <div className="overview-trials">{recent.map((item) => <button className="overview-trial" key={item.id} onClick={() => onOpen(item.id, item.kind)}><span className="overview-trial-icon">{item.kind === "project" ? <Folder size={16} /> : item.kind === "tool" ? <Rocket size={16} /> : <BookOpen size={16} />}</span><span className="overview-trial-copy"><strong>{item.title}</strong><small>{item.note.summary || item.summary || "暂无摘要"}</small></span><span className="overview-trial-status">{item.note.status === "ready" ? "已有说明" : item.note.status === "failed" ? "加工失败" : "待生成"}</span><ChevronRight size={15} /></button>)}</div>}
