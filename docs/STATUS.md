@@ -7,25 +7,35 @@ OPC 从“自建素材、行动与成果的工作台”改为**读取独立知�
 ### 已实现
 
 - 知识解析与索引：`lib/knowledge/`（YAML 子集解析、快照读取、SQLite 索引、同步状态）。
-- 模型加工：“阅读说明”规程 `reading-note-v1`，输出分为原文事实、关键选择与依据、步骤、适用条件、仍未确定、模型推断；校验失败会带着更严格的提示重试一次，被截断时提高输出上限重试。
+- 模型加工：“阅读说明”规程 `reading-note-v1`，输出分为原文事实、关键选择与依据、步骤、适用条件、仍未确定、模型推断；校验失败会带着更严格的提示重试一次，输出被截断时提高上限重试。
 - 数据表：`knowledge_entries`、`knowledge_reading_notes`、`knowledge_sync_state`（migration 10）。
 - 接口：`GET /api/v1/knowledge`、`GET /api/v1/knowledge/entries/:id`、`POST /api/v1/knowledge/sync|notes|process`。
 - 页面：总览、项目、工具、空间改为知识条目视图；条目详情显示阅读说明、原文、来源、更新时间与加工状态；同步与加工在页面上手动触发。
-- 命令行：`npx tsx scripts/knowledge-sync.ts`（同步 + 按需加工），可直接用于定时任务。
+- 命令行与定时任务：`npx tsx scripts/knowledge-sync.ts`，服务器用 `deploy/knowledge-sync.sh` + systemd timer。
 
-### 已验证（本地）
+### 本地验证
 
 - `npm test`：30 项通过，其中 11 项覆盖知识解析、同步幂等、内容变化、删除不可见、模型失败保留上一次结果。
-- `npm run lint`、`npx tsc --noEmit` 通过。
-- 真实知识仓库实跑：同步 17 条（6 项目、7 工具、4 笔记），提交 `44bb709`；用 `deepseek-flash` 生成 17 份阅读说明，全部 `ready`，来源哈希与规程版本随结果保存。
-- 浏览器实测：总览显示同步状态与最近更新；项目列表 6 条；MYOPC 详情页显示阅读说明（原文事实、关键选择等）、生成/重新生成按钮与入口链接。
+- `npm run lint`、`npx tsc --noEmit`、`npm run build` 通过。
+- 真实知识仓库实跑：同步 17 条（6 项目、7 工具、4 笔记），提交 `44bb709`；用 `deepseek-flash` 生成 17 份阅读说明，全部 `ready`。
+- 浏览器实测：总览显示同步状态与最近更新；项目列表 6 条；MYOPC 详情页显示阅读说明、生成/重新生成按钮与入口链接。
+
+## 服务器部署（2026-09-10）
+
+- 应用提交 `8714fbe` 已部署到 `124.222.190.89`，容器 `myopc` 由本仓库 `deploy/opc-server.compose.yml` 构建（`name: opc`），健康检查返回 `status=ok`、`release=8714fbe`。
+- 挂载：`/opt/data/opc → /data`（数据）、`/opt/data/knowledge/myopc → /knowledge`（只读知识仓库）、`/opt/data/knowledge/commit.txt → /knowledge-commit.txt`（来源版本，容器内没有 git）。
+- 代码与知识仓库都改用只读 Deploy Key：`/root/.ssh/myopc-deploy`、`/root/.ssh/myopc-knowledge`；服务器可自行 `git fetch`，不再依赖本地传输。
+- 服务器同步结果：17 条索引、0 条待加工、17 份阅读说明 `ready`，来源版本 `44bb709`。
+- 定时任务 `opc-knowledge-sync.timer` 每 10 分钟拉取知识仓库并调用同步与加工接口，实测一次运行 4 秒完成。
+- 部署前备份 `/opt/backups/opc/pre-knowledge-51443d9.sqlite`，完整性检查与外键检查通过；容器重启后条目、阅读说明与来源版本仍可读取。
+- 从本机（另一台设备）访问 `http://124.222.190.89:3010/` 返回 401（Basic Auth 生效）；`3011` 只监听本机回环，未对外暴露。
 
 ### 未验证
 
-- 服务器尚未部署本次改造，`:3010` 仍是上一版；知识仓库尚未在服务器上检出，也没有配置定时同步。
-- 未从第二台设备访问服务器确认同一份内容。
-- 尚未接入收集对话的实际产出（`sources.yaml` 里的 collected_commit 仍多为 pending）。
-- 模型输出的质量只按结构校验，未逐条人工复核；`inferences` 是模型推断，不是已验证事实。
+- 未用 Basic Auth 凭据从第二台设备完整走一遍页面（只验证了可达性与认证拦截）。
+- 收集对话尚未按 `sources.yaml` 产出新条目；`collected_commit` 多为 `pending`。
+- 模型输出只做结构校验，未逐条人工复核；`inferences` 是模型推断，不是已验证事实。
+- Easel、Karakeep 与 OPC 之间仍是人工交接，没有自动同步。
 
 ## 历史
 
