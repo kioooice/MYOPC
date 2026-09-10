@@ -2,7 +2,7 @@ import { KnowledgeError } from "./repo";
 import { countEntriesNeedingNote, getKnowledgeEntry, getReadingNote, listEntriesNeedingNote, saveReadingNote, type KnowledgeEntryRecord, type ReadingNoteContent, type ReadingNoteRecord } from "./store";
 import { callChatModel, getModelConfig } from "./model";
 
-export const PROMPT_VERSION = "reading-note-v1";
+export const PROMPT_VERSION = "reading-note-v2";
 const MAX_BODY_CHARS = 12000;
 
 const SYSTEM_PROMPT = [
@@ -10,6 +10,7 @@ const SYSTEM_PROMPT = [
   "只依据给定的条目原文和来源信息，不补充材料以外的历史、结论或数据。",
   "区分原文事实与你的推断：原文写明的放 facts，你自己推出的放 inferences。",
   "没有内容的栏目返回空数组，不要为了凑满而编造。",
+  "brief 要短：不超过 24 个汉字，能独立看懂，不要用省略号或断句。",
   "只输出 JSON，不要输出解释、Markdown 代码块或多余文字。",
 ].join("\n");
 
@@ -17,7 +18,8 @@ function schemaHint() {
   return [
     "输出 JSON 结构：",
     "{",
-    '  "summary": "一句话说明这个条目在讲什么",',
+    '  "summary": "一段话说明这个条目在讲什么（详细页用）",',
+    '  "brief": "首页用的一句话简介，不超过 24 个字，必须是完整句子，不要省略号",',
     '  "facts": ["原文明确写出的事实"],',
     '  "decisions": [{"title": "关键选择", "detail": "选择内容与依据"}],',
     '  "steps": ["操作步骤"],',
@@ -85,6 +87,7 @@ export function parseReadingNoteContent(raw: string): ReadingNoteContent {
     : [];
   return {
     summary,
+    brief: text(record.brief) || summary,
     facts: textList(record.facts),
     decisions,
     steps: textList(record.steps),

@@ -21,6 +21,8 @@ export type KnowledgeEntryRecord = {
 
 export type ReadingNoteContent = {
   summary: string;
+  /** 首页用的一句话简介，控制在 24 字以内。 */
+  brief: string;
   facts: string[];
   decisions: Array<{ title: string; detail: string }>;
   steps: string[];

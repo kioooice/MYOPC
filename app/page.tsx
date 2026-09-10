@@ -9,7 +9,7 @@ type Version = { id: string; ordinal: number; content: string; created_at?: stri
 type Deliverable = { id: string; title: string; type: string; accepted_version_id: string | null; review_status?: string; created_at?: string; versions: Version[] };
 type Decision = { id: string; rationale: string; adjustment: string; next_step: string; execution_status: string };
 type Trial = { id: string; title: string; goal: string; status: string; revision: number; project_id?: string | null; project?: { id: string; name: string; category: string } | null; code_repository?: string | null; code_branch?: string | null; code_commit?: string | null; next_step?: string | null; method: null | { title: string; revision_label: string; purpose: string; steps: string[] }; capture: null | { title: string; kind: string; source?: string }; captures?: Array<{ id: string; title: string; kind: string }>; deliverables: Deliverable[]; decisions: Decision[] };
-type KnowledgeNote = { status: "ready" | "failed" | "missing"; model: string | null; generatedAt: string | null; error: string | null; summary: string | null };
+type KnowledgeNote = { status: "ready" | "failed" | "missing"; model: string | null; generatedAt: string | null; error: string | null; summary: string | null; brief: string | null };
 type KnowledgeItem = { id: string; kind: string; title: string; summary: string; status: string; tags: string[]; updatedAt: string | null; link: string | null; relPath: string; sourceUrls: string[]; note: KnowledgeNote };
 type KnowledgeNoteContent = { summary: string; facts: string[]; decisions: Array<{ title: string; detail: string }>; steps: string[]; conditions: string[]; open_questions: string[]; inferences: string[] };
 type KnowledgeDetail = KnowledgeItem & { body: string; sources: Array<{ label: string; url: string | null }>; related: Array<{ id: string; title: string; kind: string; status: string }>; noteContent: KnowledgeNoteContent | null; promptVersion: string };
@@ -420,7 +420,7 @@ function OverviewView({ projects, tools, notes, onOpen, onNavigate }: { projects
           <div className="overview-items">
             {items.map((item) => <button className="overview-item" key={item.id} onClick={() => onOpen(item.id, item.kind)}>
               <strong>{item.title}</strong>
-              <small>{item.note.summary || item.summary || "暂无摘要"}</small>
+              <small>{item.note.brief || item.summary || "暂无摘要"}</small>
             </button>)}
             {items.length === 0 && <p className="overview-item-empty">还没有内容</p>}
           </div>
