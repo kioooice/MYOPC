@@ -56,6 +56,10 @@ MYOPC 是 Next.js 单体应用：React / TypeScript 前端、Node.js 服务端�
 
 历史接口的幂等与版本冲突规则保持不变（`X-Client-Request-Id`、`expected_revision`、`expected_previous_version_id`）。
 
+## 依赖约束
+
+`better-sqlite3` 必须是 13.x（首个 N-API 版本）。12.x 在 Node 24 下会在语句对象被回收时触发 Node 的清理钩子回归（nodejs/node#65446），随机 abort 整个进程；13.x 不再使用该钩子，也就不再依赖本机编译。升级前先在容器内跑一次压测：创建两万次语句并强制 GC，确认不中断。
+
 ## 配置
 
 | 变量 | 说明 |
