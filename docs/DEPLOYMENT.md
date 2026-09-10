@@ -67,17 +67,22 @@ npx tsx scripts/knowledge-sync.ts --force-entry id # 强制重做某一条
 
 ### 服务器上的知识同步
 
-知识仓库是私有仓库，服务器用只读 Deploy Key 拉取：
+知识仓库是私有仓库，服务器用只读 Deploy Key 拉取，检出在 `/opt/data/knowledge/myopc`；同步脚本 `deploy/knowledge-sync.sh` 会拉取、记录来源版本、让 OPC 重新索引并按需加工。
 
 ```sh
-sudo git -C /opt/data/knowledge/myopc fetch --prune origin
-sudo git -C /opt/data/knowledge/myopc reset --hard origin/main
-curl -fsS -X POST http://127.0.0.1:3011/api/v1/knowledge/sync -H 'content-type: application/json' -d '{}'
-curl -fsS -X POST http://127.0.0.1:3011/api/v1/knowledge/process -H 'content-type: application/json' -d '{"limit":3}'
+sudo cp /opt/apps/opc/deploy/knowledge-sync.sh /usr/local/bin/opc-knowledge-sync
+sudo chmod 755 /usr/local/bin/opc-knowledge-sync
+sudo cp /opt/apps/opc/deploy/opc-knowledge-sync.service /etc/systemd/system/
+sudo cp /opt/apps/opc/deploy/opc-knowledge-sync.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now opc-knowledge-sync.timer
+sudo systemctl start opc-knowledge-sync.service
+systemctl list-timers opc-knowledge-sync.timer
 ```
 
-这三步可以放在 systemd timer 或 cron 里定时跑。
+容器里没有 git，所以来源版本通过挂载的 `/opt/data/knowledge/commit.txt` 传给应用；升级容器前要先创建该文件（`sudo touch /opt/data/knowledge/commit.txt`），否则 Docker 会把挂载点建成目录。
 
+定时任务只改内容：代码或依赖变化仍需重新构建容器。
 ## 数据维护
 
 ```powershell

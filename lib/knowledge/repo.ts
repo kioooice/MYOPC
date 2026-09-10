@@ -118,6 +118,18 @@ export function knowledgeSourceUrl(ref: KnowledgeSourceRef, repository = getKnow
   return null;
 }
 
+function readCommitFile() {
+  const file = process.env.MYOPC_KNOWLEDGE_COMMIT_FILE?.trim();
+  if (!file) return null;
+  try {
+    const [commit, branch] = readFileSync(file, "utf8").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (!commit) return null;
+    return { commit, branch: branch || null };
+  } catch {
+    return null;
+  }
+}
+
 export function readKnowledgeSnapshot(directory = getKnowledgeDirectory()): KnowledgeSnapshot {
   if (!existsSync(/*turbopackIgnore: true*/ directory) || !statSync(/*turbopackIgnore: true*/ directory).isDirectory()) {
     throw new KnowledgeError("knowledge_directory_missing", `知识目录不存在：${directory}`);
@@ -166,10 +178,14 @@ export function readKnowledgeSnapshot(directory = getKnowledgeDirectory()): Know
     }
   }
 
+  // 容器里通常没有 git；此时用同步脚本写下的版本文件补上来源版本。
+  const gitCommit = readGitValue(directory, ["rev-parse", "HEAD"]);
+  const gitBranch = readGitValue(directory, ["rev-parse", "--abbrev-ref", "HEAD"]);
+  const recorded = gitCommit ? null : readCommitFile();
   return {
     directory,
-    branch: readGitValue(directory, ["rev-parse", "--abbrev-ref", "HEAD"]),
-    commit: readGitValue(directory, ["rev-parse", "HEAD"]),
+    branch: gitBranch || recorded?.branch || null,
+    commit: gitCommit || recorded?.commit || null,
     entries,
     problems,
   };

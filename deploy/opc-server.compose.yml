@@ -17,8 +17,10 @@ services:
       MYOPC_DATA_DIR: /data
       MYOPC_KNOWLEDGE_DIR: /knowledge
       MYOPC_KNOWLEDGE_REPO: kioooice/MYOPC-Knowledge
+      MYOPC_KNOWLEDGE_COMMIT_FILE: /knowledge-commit.txt
     ports:
       - "127.0.0.1:3011:3000"
     volumes:
       - /opt/data/opc:/data
       - /opt/data/knowledge/myopc:/knowledge:ro
+      - /opt/data/knowledge/commit.txt:/knowledge-commit.txt:ro
