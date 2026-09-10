@@ -15,6 +15,21 @@ import {
   type ReadingNoteContent,
 } from "./store";
 
+// 列表卡的内容由模型生成，偶尔会写超；这里按句号收边，保证页面上不会出现半句话。
+const CARD_LIMIT = 110;
+function shortenCard(value: string | null | undefined) {
+  const content = (value || "").trim();
+  if (!content || content.length <= CARD_LIMIT) return content || null;
+  const sentences = content.split(/(?<=[。！？；])/).map((part) => part.trim()).filter(Boolean);
+  let result = "";
+  for (const sentence of sentences) {
+    if (result && (result + sentence).length > CARD_LIMIT) break;
+    result += sentence;
+  }
+  if (!result) result = content.slice(0, CARD_LIMIT - 1) + "。";
+  return result;
+}
+
 export type KnowledgeNoteSummary = {
   status: "ready" | "failed" | "missing";
   model: string | null;
@@ -63,7 +78,7 @@ function noteSummary(entryId: string, contentHash: string): KnowledgeNoteSummary
     error: note.error,
     summary: note.content?.summary ?? null,
     brief: note.content?.brief ?? null,
-    card: note.content?.card ?? null,
+    card: shortenCard(note.content?.card),
   };
 }
 
@@ -138,7 +153,7 @@ export function getKnowledgeList(options: { kind?: string; query?: string } = {}
             error: note.error,
             summary: note.content?.summary ?? null,
             brief: note.content?.brief ?? null,
-            card: note.content?.card ?? null,
+            card: shortenCard(note.content?.card),
           }
         : { status: "missing", model: null, generatedAt: null, error: null, summary: null, brief: null, card: null },
     };
