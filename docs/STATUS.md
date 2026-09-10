@@ -9,7 +9,7 @@ OPC 从“自建素材、行动与成果的工作台”改为**读取独立知�
 - 知识解析与索引：`lib/knowledge/`（YAML 子集解析、快照读取、SQLite 索引、同步状态）。
 - 模型加工：“阅读说明”规程 `reading-note-v1`，输出分为原文事实、关键选择与依据、步骤、适用条件、仍未确定、模型推断；校验失败会带着更严格的提示重试一次，输出被截断时提高上限重试。
 - 数据表：`knowledge_entries`、`knowledge_reading_notes`、`knowledge_sync_state`（migration 10）。
-- 接口：`GET /api/v1/knowledge`、`GET /api/v1/knowledge/entries/:id`、`POST /api/v1/knowledge/sync|notes|process`。
+- 接口：`GET /api/v1/knowledge`、`GET /api/v1/knowledge/entries/:id`、`POST /api/v1/knowledge/sync|notes|process`；`sync` 会先把知识仓库快进到远端最新（拉不动时说明原因并只重建索引）。
 - 页面：总览、项目、工具、空间改为知识条目视图；条目详情显示阅读说明、原文、来源、更新时间与加工状态；同步与加工在页面上手动触发。
 - 命令行与定时任务：`npx tsx scripts/knowledge-sync.ts`，服务器用 `deploy/knowledge-sync.sh` + systemd timer。
 

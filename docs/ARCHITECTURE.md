@@ -19,7 +19,7 @@ MYOPC 是 Next.js 单体应用：React / TypeScript 前端、Node.js 服务端�
 
 ## 知识数据流
 
-1. `MYOPC_KNOWLEDGE_DIR` 指向知识仓库检出目录（服务器上只读挂载）。
+1. `MYOPC_KNOWLEDGE_DIR` 指向知识仓库检出目录。同步时会先尝试把检出更新到远端最新（`git fetch` + 只允许快进合并，分支由 `MYOPC_KNOWLEDGE_BRANCH` 指定，默认 `main`）；目录不是 Git 检出、没有 git、工作区有未提交改动或拉取失败时，只重建索引并在结果里说明原因。
 2. 同步读取 `projects/`、`tools/`、`notes/` 下的 Markdown，校验 `id`、`kind` 与目录一致，计算内容哈希。
 3. 新增或内容变化的条目写入 `knowledge_entries`；从仓库消失的条目标记 `visible=0`，不再出现在页面，也不删除历史结果。
 4. 需要加工的条目（新增、内容变化、规程变化或上次失败）进入待加工队列。
@@ -61,8 +61,9 @@ MYOPC 是 Next.js 单体应用：React / TypeScript 前端、Node.js 服务端�
 | 变量 | 说明 |
 | --- | --- |
 | MYOPC_DATA_DIR | 运行数据目录（数据库、备份）；服务器上指向持久卷 |
-| MYOPC_KNOWLEDGE_DIR | 知识仓库检出目录；必须可读 |
+| MYOPC_KNOWLEDGE_DIR | 知识仓库检出目录；需可读可写才能自动快进 |
 | MYOPC_KNOWLEDGE_REPO | 知识仓库标识，用于生成原文链接（默认 `kioooice/MYOPC-Knowledge`） |
+| MYOPC_KNOWLEDGE_BRANCH | 同步时跟踪的分支（默认 `main`） |
 | MYOPC_MODEL、MYOPC_MODEL_BASE_URL、MYOPC_MODEL_API_KEY | 模型与凭据；未配置密钥时同步与浏览仍可用 |
 | MYOPC_MODEL_TIMEOUT_MS、MYOPC_MODEL_MAX_TOKENS | 请求超时与输出上限（默认 60000ms / 4000） |
 

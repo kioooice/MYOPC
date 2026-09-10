@@ -76,7 +76,7 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     if (key === "knowledge/sync") {
       const result = syncKnowledge();
-      return NextResponse.json({ sync: result.state, summary: result.summary, problems: result.problems, pendingNotes: getKnowledgeOverview().pendingNotes }, { status: 200 });
+      return NextResponse.json({ sync: result.state, summary: result.summary, problems: result.problems, pull: result.pull, pendingNotes: getKnowledgeOverview().pendingNotes }, { status: 200 });
     }
     if (key === "knowledge/notes") {
       const entryId = typeof body.entry_id === "string" ? body.entry_id.trim() : "";

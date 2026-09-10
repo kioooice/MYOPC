@@ -1,4 +1,5 @@
 import { getKnowledgeDirectory, getKnowledgeRepository, knowledgeSourceUrl, readKnowledgeSnapshot, type KnowledgeSourceRef } from "./repo";
+import { pullKnowledgeRepository } from "./git";
 import { describeModelConfig, getModelConfig } from "./model";
 import { PROMPT_VERSION, generateReadingNote, processPendingReadingNotes } from "./reading-note";
 import {
@@ -66,6 +67,8 @@ export function syncKnowledge() {
   const directory = getKnowledgeDirectory();
   const repository = getKnowledgeRepository();
   const startedAt = new Date().toISOString();
+  // 先尝试把检出更新到远端最新；拉不动（没有 git、工作区有改动、网络失败）时仍然重建索引。
+  const pull = pullKnowledgeRepository(directory);
   try {
     const snapshot = readKnowledgeSnapshot(directory);
     const summary = applyKnowledgeSnapshot(snapshot);
@@ -83,7 +86,7 @@ export function syncKnowledge() {
       startedAt,
       finishedAt: new Date().toISOString(),
     });
-    return { summary, problems: snapshot.problems, state: getKnowledgeSyncState() };
+    return { summary, problems: snapshot.problems, state: getKnowledgeSyncState(), pull };
   } catch (error) {
     const message = error instanceof Error ? error.message : "知识同步失败";
     saveKnowledgeSyncState({

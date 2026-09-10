@@ -11,8 +11,15 @@ RUN sed -i "s|deb.debian.org|${DEBIAN_MIRROR}|g; s|security.debian.org|${DEBIAN_
 COPY package*.json ./
 RUN npm ci --include=dev
 
+# 运行阶段带 git：页面上的“同步”要真的把知识仓库拉到最新。
 FROM node:24-bookworm-slim AS app
+ARG DEBIAN_MIRROR=deb.debian.org
+ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /app
+RUN sed -i "s|deb.debian.org|${DEBIAN_MIRROR}|g; s|security.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

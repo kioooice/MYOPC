@@ -132,7 +132,7 @@ export default function Home() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.message || "同步知识仓库失败");
       const summary = payload.summary || {};
-      setNotice(`已同步：新增 ${summary.added || 0}，更新 ${summary.updated || 0}，移除 ${summary.removed || 0}，共 ${summary.total || 0} 条`);
+      setNotice(`${payload.pull?.message || "已同步"}：新增 ${summary.added || 0}，更新 ${summary.updated || 0}，移除 ${summary.removed || 0}，共 ${summary.total || 0} 条`);
       await load(true);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "同步知识仓库失败"); }
     finally { setKnowledgeBusy(false); }

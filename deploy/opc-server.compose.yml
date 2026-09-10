@@ -22,5 +22,8 @@ services:
       - "127.0.0.1:3011:3000"
     volumes:
       - /opt/data/opc:/data
-      - /opt/data/knowledge/myopc:/knowledge:ro
+      - /opt/data/knowledge/myopc:/knowledge
       - /opt/data/knowledge/commit.txt:/knowledge-commit.txt:ro
+      # 只读挂载知识仓库的 Deploy Key，容器里的同步需要自己 fetch（只读，不能推送）。
+      - /root/.ssh/myopc-knowledge:/root/.ssh/myopc-knowledge:ro
+      - /root/.ssh/known_hosts:/root/.ssh/known_hosts:ro
