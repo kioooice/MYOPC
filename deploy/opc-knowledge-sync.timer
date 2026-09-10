@@ -1,9 +1,9 @@
 [Unit]
-Description=Run MYOPC knowledge sync every 10 minutes
+Description=Run MYOPC knowledge sync every 30 minutes
 
 [Timer]
 OnBootSec=5min
-OnUnitActiveSec=10min
+OnUnitActiveSec=30min
 AccuracySec=30s
 Unit=opc-knowledge-sync.service
 

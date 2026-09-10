@@ -26,7 +26,7 @@ OPC 从“自建素材、行动与成果的工作台”改为**读取独立知�
 - 挂载：`/opt/data/opc → /data`（数据）、`/opt/data/knowledge/myopc → /knowledge`（只读知识仓库）、`/opt/data/knowledge/commit.txt → /knowledge-commit.txt`（来源版本，容器内没有 git）。
 - 代码与知识仓库都改用只读 Deploy Key：`/root/.ssh/myopc-deploy`、`/root/.ssh/myopc-knowledge`；服务器可自行 `git fetch`，不再依赖本地传输。
 - 服务器同步结果：17 条索引、0 条待加工、17 份阅读说明 `ready`，来源版本 `44bb709`。
-- 定时任务 `opc-knowledge-sync.timer` 每 10 分钟拉取知识仓库并调用同步与加工接口，实测一次运行 4 秒完成。
+- 定时任务 `opc-knowledge-sync.timer` 每 30 分钟拉取知识仓库并调用同步与加工接口；无更新时一次运行约 5 秒，几乎全部是到 GitHub 的网络往返，加工只在内容变化时发生。
 - 部署前备份 `/opt/backups/opc/pre-knowledge-51443d9.sqlite`，完整性检查与外键检查通过；容器重启后条目、阅读说明与来源版本仍可读取。
 - 从本机（另一台设备）访问 `http://124.222.190.89:3010/` 返回 401（Basic Auth 生效）；`3011` 只监听本机回环，未对外暴露。
 
