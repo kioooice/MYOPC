@@ -250,10 +250,6 @@ export default function Home() {
         <button className={view === "toolbox" || (view === "entry" && lastEntrySection === "toolbox") ? "nav-item active" : "nav-item"} onClick={() => goTo("toolbox")}><Rocket size={17} /><span>工具</span>{knowledgeTools.length > 0 && <b>{knowledgeTools.length}</b>}</button>
         <button className={view === "space" || (view === "entry" && lastEntrySection === "space") ? "nav-item active" : "nav-item"} onClick={() => goTo("space")}><BookOpen size={17} /><span>空间</span>{knowledgeNotes.length > 0 && <b>{knowledgeNotes.length}</b>}</button>
       </nav>
-      <div className="sidebar-section"><div className="section-label"><span>最近行动</span>{trials.length > 0 && <small>{trials.length}</small>}</div>
-        {trials.length > 4 && <label className="search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索" /></label>}
-        <div className="trial-list">{filteredTrials.slice(0, 8).map((item) => <button key={item.id} className={selected === item.id ? "history-item active" : "history-item"} onClick={() => openTrial(item.id)}><span>{item.title}</span><small>{statusLabel(item.status)}</small></button>)}{!loading && trials.length === 0 && <p className="sidebar-empty">还没有记录</p>}</div>
-      </div>
       <div className="sidebar-foot"><span><i /> 共享工作状态</span><small>Codex 驱动</small></div>
     </aside>
 
@@ -413,12 +409,11 @@ function KnowledgeDetailView({ entry, busy, model, onBack, onGenerate }: { entry
 function OverviewView({ projects, tools, notes, recent, onOpen, onNavigate }: { projects: KnowledgeItem[]; tools: KnowledgeItem[]; notes: KnowledgeItem[]; recent: KnowledgeItem[]; onOpen: (id: string, kind: string) => void; onNavigate: (view: View) => void }) {
   return <div className="overview-view">
     <div className="overview-stats">
-      <button onClick={() => onNavigate("projects")}><span>项目</span><strong>{projects.length}</strong><small>查看 Projects <ChevronRight size={13} /></small></button>
-      <button onClick={() => onNavigate("toolbox")}><span>可调用工具</span><strong>{tools.length}</strong><small>查看 Toolbox <ChevronRight size={13} /></small></button>
-      <button onClick={() => onNavigate("space")}><span>知识与方法</span><strong>{notes.length}</strong><small>查看 Space <ChevronRight size={13} /></small></button>
+      <button onClick={() => onNavigate("projects")}><span>项目</span><strong>{projects.length}</strong><ChevronRight size={14} /></button>
+      <button onClick={() => onNavigate("toolbox")}><span>可调用工具</span><strong>{tools.length}</strong><ChevronRight size={14} /></button>
+      <button onClick={() => onNavigate("space")}><span>知识与方法</span><strong>{notes.length}</strong><ChevronRight size={14} /></button>
     </div>
     <section className="overview-section">
-      <div className="overview-section-head"><div><span className="eyebrow">最近更新</span><h2>知识仓库里最近变化的条目</h2></div><button className="text-button" onClick={() => onNavigate("projects")}>打开 Projects <ChevronRight size={14} /></button></div>
       {recent.length === 0 ? <div className="overview-empty"><span className="overview-empty-icon"><BookOpen size={22} /></span><h2>还没有同步内容</h2><p>先同步知识仓库，或在收集对话里整理出第一条条目。</p></div> : <div className="overview-trials">{recent.map((item) => <button className="overview-trial" key={item.id} onClick={() => onOpen(item.id, item.kind)}><span className="overview-trial-icon">{item.kind === "project" ? <Folder size={16} /> : item.kind === "tool" ? <Rocket size={16} /> : <BookOpen size={16} />}</span><span className="overview-trial-copy"><strong>{item.title}</strong><small>{item.note.summary || item.summary || "暂无摘要"}</small></span><span className="overview-trial-status">{item.note.status === "ready" ? "已有说明" : item.note.status === "failed" ? "加工失败" : "待生成"}</span><ChevronRight size={15} /></button>)}</div>}
     </section>
     <p className="overview-footnote">加工只处理来源或规程变化的条目；打开页面不会自动调用模型。历史行动、成果与反馈仍保留在数据库里，不再进入主要流程。</p>
