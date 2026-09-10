@@ -107,7 +107,6 @@ export default function Home() {
   const knowledgeTools = useMemo(() => knowledge.filter((item) => item.kind === "tool"), [knowledge]);
   const knowledgeNotes = useMemo(() => knowledge.filter((item) => item.kind === "note"), [knowledge]);
   const knowledgeTooltip = [knowledgeSync?.commit ? `知识仓库 ${knowledgeSync.commit.slice(0, 8)}` : "知识仓库未同步", knowledgeSync?.finishedAt ? new Date(knowledgeSync.finishedAt).toLocaleString("zh-CN") : "", knowledgeModel?.configured ? `模型 ${knowledgeModel.model}` : "模型未配置", pendingNotes > 0 ? `${pendingNotes} 条待加工` : "阅读说明已就绪"].filter(Boolean).join(" · ");
-  const recentKnowledge = useMemo(() => [...knowledge].sort((left, right) => (right.updatedAt || "").localeCompare(left.updatedAt || "")).slice(0, 5), [knowledge]);
   const activeTrials = useMemo(() => trials.filter((item) => item.status === "in_progress" || item.status === "review"), [trials]);
   const openFeedbackCount = useMemo(() => trials.flatMap((item) => item.deliverables).flatMap((item) => item.versions).flatMap((item) => item.feedback).filter((item) => item.status === "open").length, [trials]);
   const pendingReviewCount = useMemo(() => trials.flatMap((item) => item.deliverables).filter((deliverable) => deliverable.review_status === "pending_review" && !deliverable.versions[0]?.feedback.some((feedback) => feedback.status === "open" && feedback.kind === "review")).length, [trials]);
@@ -264,7 +263,7 @@ export default function Home() {
         {error && <div className="error-banner"><CircleAlert size={16} /><span>{error}</span>{!pendingWrite && <button className="retry-button" onClick={() => void load()}>重新连接</button>}<button onClick={() => setError("")} aria-label="关闭提示"><X size={16} /></button></div>}
         {loading && <div className="loading-state">正在读取共享工作状态…</div>}
         {notice && <div className="notice-banner"><CheckCircle2 size={15} /><span>{notice}</span><button onClick={() => setNotice("")} aria-label="关闭提示"><X size={15} /></button></div>}
-        {!loading && view === "overview" && !trial && <OverviewView projects={knowledgeProjects} tools={knowledgeTools} notes={knowledgeNotes} recent={recentKnowledge} onOpen={openEntry} onNavigate={goTo} />}
+        {!loading && view === "overview" && !trial && <OverviewView projects={knowledgeProjects} tools={knowledgeTools} notes={knowledgeNotes} onOpen={openEntry} onNavigate={goTo} />}
         {view === "entry" && entryLoading && <div className="loading-state">正在读取条目…</div>}
         {view === "entry" && !entryLoading && entry && <KnowledgeDetailView entry={entry} busy={knowledgeBusy} model={knowledgeModel} onBack={() => goTo(lastEntrySection)} onGenerate={(id, force) => void generateNote(id, force)} />}
         {!loading && !trial && view === "projects" && <KnowledgeListView kind="project" items={knowledgeProjects} onOpen={openEntry} />}
@@ -406,17 +405,28 @@ function KnowledgeDetailView({ entry, busy, model, onBack, onGenerate }: { entry
   </div>;
 }
 
-function OverviewView({ projects, tools, notes, recent, onOpen, onNavigate }: { projects: KnowledgeItem[]; tools: KnowledgeItem[]; notes: KnowledgeItem[]; recent: KnowledgeItem[]; onOpen: (id: string, kind: string) => void; onNavigate: (view: View) => void }) {
+function OverviewView({ projects, tools, notes, onOpen, onNavigate }: { projects: KnowledgeItem[]; tools: KnowledgeItem[]; notes: KnowledgeItem[]; onOpen: (id: string, kind: string) => void; onNavigate: (view: View) => void }) {
+  const columns: Array<{ view: "projects" | "toolbox" | "space"; label: string; items: KnowledgeItem[] }> = [
+    { view: "projects", label: "项目", items: projects },
+    { view: "toolbox", label: "可调用工具", items: tools },
+    { view: "space", label: "知识与方法", items: notes },
+  ];
   return <div className="overview-view">
-    <div className="overview-stats">
-      <button onClick={() => onNavigate("projects")}><span>项目</span><strong>{projects.length}</strong><ChevronRight size={14} /></button>
-      <button onClick={() => onNavigate("toolbox")}><span>可调用工具</span><strong>{tools.length}</strong><ChevronRight size={14} /></button>
-      <button onClick={() => onNavigate("space")}><span>知识与方法</span><strong>{notes.length}</strong><ChevronRight size={14} /></button>
+    <div className="overview-board">
+      {columns.map((column) => {
+        const items = [...column.items].sort((left, right) => (right.updatedAt || "").localeCompare(left.updatedAt || "")).slice(0, 5);
+        return <section className="overview-column" key={column.view}>
+          <button className="overview-count" onClick={() => onNavigate(column.view)} title={`打开${column.label}`}><span>{column.label}</span><strong>{column.items.length}</strong><ChevronRight size={14} /></button>
+          <div className="overview-items">
+            {items.map((item) => <button className="overview-item" key={item.id} onClick={() => onOpen(item.id, item.kind)}>
+              <strong>{item.title}</strong>
+              <small>{item.note.summary || item.summary || "暂无摘要"}</small>
+            </button>)}
+            {items.length === 0 && <p className="overview-item-empty">还没有内容</p>}
+          </div>
+        </section>;
+      })}
     </div>
-    <section className="overview-section">
-      {recent.length === 0 ? <div className="overview-empty"><span className="overview-empty-icon"><BookOpen size={22} /></span><h2>还没有同步内容</h2><p>先同步知识仓库，或在收集对话里整理出第一条条目。</p></div> : <div className="overview-trials">{recent.map((item) => <button className="overview-trial" key={item.id} onClick={() => onOpen(item.id, item.kind)}><span className="overview-trial-icon">{item.kind === "project" ? <Folder size={16} /> : item.kind === "tool" ? <Rocket size={16} /> : <BookOpen size={16} />}</span><span className="overview-trial-copy"><strong>{item.title}</strong><small>{item.note.summary || item.summary || "暂无摘要"}</small></span><span className="overview-trial-status">{item.note.status === "ready" ? "已有说明" : item.note.status === "failed" ? "加工失败" : "待生成"}</span><ChevronRight size={15} /></button>)}</div>}
-    </section>
-    <p className="overview-footnote">加工只处理来源或规程变化的条目；打开页面不会自动调用模型。历史行动、成果与反馈仍保留在数据库里，不再进入主要流程。</p>
   </div>;
 }
 function ListView({ title, subtitle, trials, onOpen, empty }: { title: string; subtitle: string; trials: Trial[]; onOpen: (id: string) => void; empty: string }) {
