@@ -1,6 +1,7 @@
 # 服务器（124.222.190.89）使用的组合文件。
 # 放在 /opt/apps/opc/deploy/ 下执行：
 #   docker compose -f deploy/opc-server.compose.yml up -d --build
+name: opc
 services:
   myopc:
     build:
