@@ -53,6 +53,8 @@ export type KnowledgeListItem = {
   link: string | null;
   relPath: string;
   sourceUrls: string[];
+  /** notes 的分类（工作方式 / 产品设计 / 工程运维 / 流程记录 / 决策）。 */
+  category: string | null;
   note: KnowledgeNoteSummary;
 };
 
@@ -147,6 +149,7 @@ export function getKnowledgeList(options: { kind?: string; query?: string } = {}
       link: entry.link,
       relPath: entry.relPath,
       sourceUrls: entry.sources.map((source) => knowledgeSourceUrl(source, repository, branch)).filter((url): url is string => Boolean(url)),
+      category: typeof entry.extra?.category === "string" && entry.extra.category.trim() ? entry.extra.category.trim() : null,
       note: noteSummary(entry.id, entry.contentHash),
 
     };

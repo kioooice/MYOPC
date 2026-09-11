@@ -17,6 +17,8 @@ export type KnowledgeEntryRecord = {
   contentHash: string;
   visible: boolean;
   changedAt: string;
+  /** 条目里的其它 front matter 字段，例如 notes 的 category。 */
+  extra: Record<string, unknown>;
 };
 
 export type ReadingNoteContent = {
@@ -68,7 +70,7 @@ type EntryRow = {
   id: string; kind: string; title: string; summary: string; status: string;
   tags_json: string; related_json: string; link: string | null; updated_at: string | null;
   sources_json: string; body: string; rel_path: string; content_hash: string;
-  visible: number; changed_at: string;
+  visible: number; changed_at: string; extra_json: string;
 };
 
 type NoteRow = {
@@ -99,6 +101,7 @@ function toEntry(row: EntryRow): KnowledgeEntryRecord {
     contentHash: row.content_hash,
     visible: row.visible === 1,
     changedAt: row.changed_at,
+    extra: parseJson<Record<string, unknown>>(row.extra_json, {}),
   };
 }
 
@@ -120,7 +123,7 @@ function toNote(row: NoteRow): ReadingNoteRecord {
 export function applyKnowledgeSnapshot(snapshot: KnowledgeSnapshot): ApplySummary {
   const db = getDb();
   const timestamp = new Date().toISOString();
-  const existing = db.prepare("SELECT id, content_hash, visible, rel_path FROM knowledge_entries").all() as Array<{ id: string; content_hash: string; visible: number; rel_path: string }>;
+  const existing = db.prepare("SELECT id, content_hash, visible, rel_path, extra_json FROM knowledge_entries").all() as Array<{ id: string; content_hash: string; visible: number; rel_path: string; extra_json: string }>;
   const known = new Map(existing.map((row) => [row.id, row]));
   const seen = new Set<string>();
   let added = 0;
@@ -155,8 +158,10 @@ export function applyKnowledgeSnapshot(snapshot: KnowledgeSnapshot): ApplySummar
         now: timestamp,
       };
       if (!previous) { insert.run(params); added += 1; continue; }
-      // 路径变化也要写回索引；内容没变时哈希不变，加工结果仍然复用。
-      if (previous.content_hash !== entry.contentHash || previous.visible !== 1 || previous.rel_path !== entry.relPath) { update.run(params); updated += 1; continue; }
+      // 路径或 front matter 里的其它字段（例如 notes 的 category）变化也要写回索引；
+      // 内容哈希没变时说明正文未改，加工结果继续复用。
+      const extraChanged = previous.extra_json !== params.extra;
+      if (previous.content_hash !== entry.contentHash || previous.visible !== 1 || previous.rel_path !== entry.relPath || extraChanged) { update.run(params); updated += 1; continue; }
       touch.run({ id: entry.id, now: timestamp });
       unchanged += 1;
     }

@@ -10,7 +10,7 @@ type Deliverable = { id: string; title: string; type: string; accepted_version_i
 type Decision = { id: string; rationale: string; adjustment: string; next_step: string; execution_status: string };
 type Trial = { id: string; title: string; goal: string; status: string; revision: number; project_id?: string | null; project?: { id: string; name: string; category: string } | null; code_repository?: string | null; code_branch?: string | null; code_commit?: string | null; next_step?: string | null; method: null | { title: string; revision_label: string; purpose: string; steps: string[] }; capture: null | { title: string; kind: string; source?: string }; captures?: Array<{ id: string; title: string; kind: string }>; deliverables: Deliverable[]; decisions: Decision[] };
 type KnowledgeNote = { status: "ready" | "stale" | "failed" | "missing"; stale: boolean; model: string | null; generatedAt: string | null; error: string | null; summary: string | null; brief: string | null; card: string | null };
-type KnowledgeItem = { id: string; kind: string; title: string; summary: string; status: string; tags: string[]; updatedAt: string | null; link: string | null; relPath: string; sourceUrls: string[]; note: KnowledgeNote };
+type KnowledgeItem = { id: string; kind: string; title: string; summary: string; status: string; tags: string[]; updatedAt: string | null; link: string | null; relPath: string; sourceUrls: string[]; category: string | null; note: KnowledgeNote };
 type KnowledgeNoteContent = { summary: string; facts: string[]; decisions: Array<{ title: string; detail: string }>; steps: string[]; conditions: string[]; open_questions: string[]; inferences: string[] };
 type KnowledgeDetail = KnowledgeItem & { body: string; sources: Array<{ label: string; url: string | null }>; related: Array<{ id: string; title: string; kind: string; status: string }>; noteContent: KnowledgeNoteContent | null; stale: boolean; promptVersion: string };
 type KnowledgeSync = { status: "ok" | "failed" | "never"; commit: string | null; branch: string | null; message: string | null; entryCount: number; addedCount: number; updatedCount: number; removedCount: number; startedAt: string | null; finishedAt: string | null };
@@ -335,30 +335,65 @@ function renderMarkdown(body: string) {
   return nodes;
 }
 
+const NOTE_CATEGORY_ORDER = ["工作方式", "产品设计", "工程运维", "流程记录", "决策"];
+const PROJECT_STATUS_ORDER = ["进行中", "原型验证", "方向验证", "已暂停"];
+
+function groupNotesByCategory(items: KnowledgeItem[]) {
+  const buckets = new Map<string, KnowledgeItem[]>();
+  for (const item of items) {
+    const key = item.category || "未分类";
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(item);
+    else buckets.set(key, [item]);
+  }
+  return [...NOTE_CATEGORY_ORDER, "未分类"]
+    .filter((label) => buckets.has(label))
+    .map((label) => ({ label, items: buckets.get(label) as KnowledgeItem[] }));
+}
+
+function sortProjectsByStatus(items: KnowledgeItem[]) {
+  return [...items].sort((left, right) => {
+    const rank = (item: KnowledgeItem) => {
+      const index = PROJECT_STATUS_ORDER.indexOf(item.status);
+      return index === -1 ? PROJECT_STATUS_ORDER.length : index;
+    };
+    return rank(left) - rank(right) || left.title.localeCompare(right.title);
+  });
+}
+
 function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" | "note"; items: KnowledgeItem[]; onOpen: (id: string, kind: string) => void }) {
   const meta = kind === "project"
-    ? { eyebrow: "Projects", title: "项目", subtitle: "来自知识仓库的项目概况；原文、来源和模型阅读说明都在同一条目里。" }
+    ? { eyebrow: "Projects", title: "项目", subtitle: "来自知识仓库的项目概况；进行中的排前面，已暂停的排在最后。" }
     : kind === "tool"
       ? { eyebrow: "Toolbox", title: "工具", subtitle: "真正可调用的工具与入口，说明和维护都在知识仓库里。" }
-      : { eyebrow: "Space", title: "空间", subtitle: "经过实践留下的方法、经验与判断。" };
+      : { eyebrow: "Space", title: "空间", subtitle: "经过实践留下的方法、经验与判断，按分类排列。" };
+  const groups = kind === "note"
+    ? groupNotesByCategory(items)
+    : kind === "project"
+      ? [{ label: null as string | null, items: sortProjectsByStatus(items) }]
+      : [{ label: null as string | null, items }];
+  const renderCard = (item: KnowledgeItem) => <article className="asset-card knowledge-card" key={item.id}>
+    <div className="asset-card-head"><span>{item.status || meta.eyebrow}</span><b>{noteStatusLabel(item.note.status, item.note.stale)}</b></div>
+    <h2>{item.title}</h2>
+    <p>{item.note.card || item.note.summary || item.summary || "暂无摘要"}</p>
+    {item.tags.length > 0 && <div className="tag-row">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
+    <dl>
+      <div><dt>更新</dt><dd>{item.updatedAt || "未标注"}</dd></div>
+      <div><dt>原文</dt><dd>{item.relPath}</dd></div>
+    </dl>
+    <div className="knowledge-actions">
+      <button className="primary-button" onClick={() => onOpen(item.id, item.kind)}>查看原文与说明</button>
+      {item.link && <a href={item.link} target="_blank" rel="noreferrer">打开入口 <ExternalLink size={12} /></a>}
+    </div>
+  </article>;
   return <div className="asset-view">
     <div className="view-title"><span className="eyebrow">{meta.eyebrow}</span><h1>{meta.title}</h1><p>{meta.subtitle}</p></div>
     {items.length === 0
       ? <div className="quiet-empty"><BookOpen size={22} /><p>知识仓库里还没有{meta.title}条目</p></div>
-      : <div className="asset-grid">{items.map((item) => <article className="asset-card knowledge-card" key={item.id}>
-        <div className="asset-card-head"><span>{item.status || meta.eyebrow}</span><b>{noteStatusLabel(item.note.status, item.note.stale)}</b></div>
-        <h2>{item.title}</h2>
-        <p>{item.note.card || item.note.summary || item.summary || "暂无摘要"}</p>
-        {item.tags.length > 0 && <div className="tag-row">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
-        <dl>
-          <div><dt>更新</dt><dd>{item.updatedAt || "未标注"}</dd></div>
-          <div><dt>原文</dt><dd>{item.relPath}</dd></div>
-        </dl>
-        <div className="knowledge-actions">
-          <button className="primary-button" onClick={() => onOpen(item.id, item.kind)}>查看原文与说明</button>
-          {item.link && <a href={item.link} target="_blank" rel="noreferrer">打开入口 <ExternalLink size={12} /></a>}
-        </div>
-      </article>)}</div>}
+      : groups.map((group) => <section className="asset-group" key={group.label ?? "all"}>
+        {group.label && <div className="asset-group-head"><span>{group.label}</span><small>{group.items.length}</small></div>}
+        <div className="asset-grid">{group.items.map(renderCard)}</div>
+      </section>)}
   </div>;
 }
 
