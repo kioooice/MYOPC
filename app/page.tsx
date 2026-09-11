@@ -362,13 +362,15 @@ function sortProjectsByStatus(items: KnowledgeItem[]) {
 }
 
 function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" | "note"; items: KnowledgeItem[]; onOpen: (id: string, kind: string) => void }) {
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const meta = kind === "project"
     ? { eyebrow: "Projects", title: "项目", subtitle: "来自知识仓库的项目概况；进行中的排前面，已暂停的排在最后。" }
     : kind === "tool"
       ? { eyebrow: "Toolbox", title: "工具", subtitle: "真正可调用的工具与入口，说明和维护都在知识仓库里。" }
       : { eyebrow: "Space", title: "空间", subtitle: "经过实践留下的方法、经验与判断。" };
+  const allGroups = kind === "note" ? groupNotesByCategory(items) : [];
   const groups = kind === "note"
-    ? groupNotesByCategory(items)
+    ? (categoryFilter ? allGroups.filter((group) => group.label === categoryFilter) : allGroups)
     : kind === "project"
       ? [{ label: null as string | null, items: sortProjectsByStatus(items) }]
       : [{ label: null as string | null, items }];
@@ -387,7 +389,13 @@ function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" |
     </div>
   </article>;
   return <div className="asset-view">
-    <div className="view-title"><span className="eyebrow">{meta.eyebrow}</span><h1>{meta.title}</h1><p>{meta.subtitle}</p></div>
+    <div className="view-head">
+      <div className="view-title"><span className="eyebrow">{meta.eyebrow}</span><h1>{meta.title}</h1><p>{meta.subtitle}</p></div>
+      {kind === "note" && allGroups.length > 0 && <div className="category-chips">
+        <button className={categoryFilter === null ? "category-chip active" : "category-chip"} onClick={() => setCategoryFilter(null)}>全部 <small>{items.length}</small></button>
+        {allGroups.map((group) => <button key={group.label} className={categoryFilter === group.label ? "category-chip active" : "category-chip"} onClick={() => setCategoryFilter(group.label)}>{group.label} <small>{group.items.length}</small></button>)}
+      </div>}
+    </div>
     {items.length === 0
       ? <div className="quiet-empty"><BookOpen size={22} /><p>知识仓库里还没有{meta.title}条目</p></div>
       : groups.map((group) => <section className="asset-group" key={group.label ?? "all"}>
