@@ -37,3 +37,38 @@
 .overview-stats button{min-height:64px;padding:13px 15px;display:flex;align-items:center;gap:10px}.overview-stats span{flex:1;font-size:12px;color:#5f625c}.overview-stats strong{margin:0;font-size:22px}.overview-stats svg{color:#a9aba5}.overview-section{margin-top:26px}
 .overview-view{max-width:1080px;margin:0 auto}.overview-board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}.overview-column{min-width:0;display:flex;flex-direction:column;gap:8px}.overview-count{width:100%;min-height:64px;padding:13px 15px;display:flex;align-items:center;gap:10px;border:1px solid var(--soft);border-radius:8px;background:#fff;text-align:left;cursor:pointer}.overview-count:hover{border-color:#c5c9c2;background:#fcfcfb}.overview-count span{flex:1;font-size:15px;color:#3c3e3a}.overview-count strong{font-size:22px;font-weight:650}.overview-count svg{color:#a9aba5}.overview-items{min-width:0;display:flex;flex-direction:column}.overview-item{width:100%;min-width:0;border:0;border-bottom:1px solid var(--soft);background:transparent;padding:8px 2px;text-align:left;cursor:pointer}.overview-item:hover{background:#fafaf8}.overview-item strong{display:block;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.overview-item small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:4px;color:#8a8c86;font-size:10px;line-height:1.5}.overview-item-empty{margin:10px 2px;color:#9a9b97;font-size:11px}@media(max-width:900px){.overview-board{grid-template-columns:minmax(0,1fr)}}
 .asset-card>p{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}.knowledge-card p{min-height:0}
+
+/* 随视口缩放：不同分辨率或尺寸的显示器上，版面与字号保持同一观感。 */
+.app-shell{grid-template-columns:clamp(220px,16vw,330px) minmax(0,1fr)}
+.content{max-width:min(1760px,94vw);padding:clamp(28px,3vw,64px) clamp(24px,4vw,80px) clamp(48px,6vh,110px)}
+.overview-view{max-width:min(1760px,94vw)}
+.asset-view,.projects-view,.project-detail-view,.library-view{max-width:min(1560px,92vw)}
+.knowledge-detail{max-width:min(1320px,90vw)}
+.asset-grid{grid-template-columns:repeat(auto-fit,minmax(clamp(280px,21vw,460px),1fr));gap:clamp(10px,1vw,22px)}
+.overview-board{gap:clamp(10px,1vw,22px)}
+.nav-item{height:clamp(34px,2.6vw,50px);font-size:clamp(12px,0.85vw,19px)}
+.history-item span{font-size:clamp(11px,0.8vw,16px)}
+.section-label,.sidebar-foot,.header-sync{font-size:clamp(10px,0.72vw,14px)}
+.breadcrumb strong{font-size:clamp(12px,0.9vw,18px)}
+.header-action{font-size:clamp(10px,0.72vw,15px)}
+.eyebrow{font-size:clamp(10px,0.7vw,14px)}
+.view-title h1{font-size:clamp(22px,1.7vw,40px)}
+.view-title p{font-size:clamp(12px,0.9vw,18px)}
+.overview-count span{font-size:clamp(13px,1vw,21px)}
+.overview-count strong{font-size:clamp(20px,1.6vw,36px)}
+.overview-item strong{font-size:clamp(12px,0.9vw,20px)}
+.overview-item small{font-size:clamp(10px,0.72vw,16px)}
+.overview-item{padding:clamp(7px,0.6vw,13px) 2px}
+.asset-card h2{font-size:clamp(16px,1.15vw,28px)}
+.asset-card-head span{font-size:clamp(10px,0.7vw,14px)}
+.asset-card-head b,.asset-card dt{font-size:clamp(9px,0.65vw,13px)}
+.asset-card>p{font-size:clamp(11px,0.8vw,16px)}
+.asset-card dd,.asset-card>a,.tag-row span{font-size:clamp(9px,0.68vw,14px)}
+.rows strong{font-size:clamp(12px,0.9vw,18px)}
+.rows small{font-size:clamp(11px,0.78vw,16px)}
+.knowledge-section h2{font-size:clamp(15px,1.1vw,24px)}
+.knowledge-section h3{font-size:clamp(12px,0.85vw,17px)}
+.knowledge-section p,.knowledge-section ul,.knowledge-section ol,.markdown-body{font-size:clamp(12px,0.88vw,19px)}
+.note-summary{font-size:clamp(13px,0.95vw,19px)}
+.muted-text,.source-list,.decision-list dt,.decision-list dd{font-size:clamp(11px,0.8vw,16px)}
+.detail-meta{font-size:clamp(10px,0.72vw,15px)}
