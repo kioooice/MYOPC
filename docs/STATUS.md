@@ -10,7 +10,7 @@ OPC 从“自建素材、行动与成果的工作台”改为**读取独立知�
 - 模型加工：“阅读说明”规程当前为 `reading-note-v4`（版本以 `lib/knowledge/reading-note.ts` 为准），输出完整说明、列表卡 `card`、首页 `brief` 三档；模型调用与结果解析在同一套重试里，截断、空内容和格式错误都会再试一次。
 - 数据表：`knowledge_entries`、`knowledge_reading_notes`、`knowledge_sync_state`（migration 10）。
 - 接口：`GET /api/v1/knowledge`、`GET /api/v1/knowledge/entries/:id`、`POST /api/v1/knowledge/sync|notes|process`；`sync` 会先把知识仓库快进到远端最新（拉不动时说明原因并只重建索引）。条目状态分为 ready / stale（待更新）/ failed / missing；加工失败会保留上一次可用说明，并继续算作待加工。
-- 页面：总览、项目、工具、空间改为知识条目视图；空间按 `category` 分组，项目按状态排序（进行中在前、已暂停在后）；条目详情显示阅读说明、原文、来源、更新时间与加工状态；同步与加工在页面上手动触发。
+- 页面：总览、项目、工具、空间改为知识条目视图；空间按 `category`（方法 / 经验 / 判断）分组并提供筛选按钮，项目按状态排序（进行中在前、已暂停在后）；条目详情显示阅读说明、原文、来源、更新时间与加工状态；同步与加工在页面上手动触发。
 - 命令行与定时任务：`npx tsx scripts/knowledge-sync.ts`，服务器用 `deploy/knowledge-sync.sh` + systemd timer。
 
 ### 本地验证
