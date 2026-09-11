@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS knowledge_reading_notes (
   entry_id TEXT PRIMARY KEY REFERENCES knowledge_entries(id) ON DELETE CASCADE,
   prompt_version TEXT NOT NULL, source_hash TEXT NOT NULL, model TEXT NOT NULL,
   status TEXT NOT NULL, content_json TEXT, error TEXT,
-  generated_at TEXT, attempted_at TEXT NOT NULL
+  generated_at TEXT, attempted_at TEXT NOT NULL, attempted_source_hash TEXT
 );
 CREATE TABLE IF NOT EXISTS knowledge_sync_state (
   id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -260,7 +260,9 @@ export function getDb() {
   toolSpace.run("seed-tool-cloud-deploy", "seed-space-safe-deploy");
   }
   instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (9, ?)").run(timestamp);
+  addColumn("knowledge_reading_notes", "attempted_source_hash", "TEXT");
   instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (10, ?)").run(new Date().toISOString());
+  instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (11, ?)").run(new Date().toISOString());
   return instance;
 }
 

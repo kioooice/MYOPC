@@ -43,6 +43,8 @@ export type ReadingNoteRecord = {
   error: string | null;
   generatedAt: string | null;
   attemptedAt: string;
+  /** 最近一次尝试对应的来源哈希，用来判断失败是否针对当前原文。 */
+  attemptedSourceHash: string | null;
 };
 
 export type KnowledgeSyncState = {
@@ -72,7 +74,7 @@ type EntryRow = {
 type NoteRow = {
   entry_id: string; prompt_version: string; source_hash: string; model: string;
   status: string; content_json: string | null; error: string | null;
-  generated_at: string | null; attempted_at: string;
+  generated_at: string | null; attempted_at: string; attempted_source_hash: string | null;
 };
 
 function parseJson<T>(value: string | null, fallback: T): T {
@@ -111,13 +113,14 @@ function toNote(row: NoteRow): ReadingNoteRecord {
     error: row.error,
     generatedAt: row.generated_at,
     attemptedAt: row.attempted_at,
+    attemptedSourceHash: row.attempted_source_hash ?? null,
   };
 }
 
 export function applyKnowledgeSnapshot(snapshot: KnowledgeSnapshot): ApplySummary {
   const db = getDb();
   const timestamp = new Date().toISOString();
-  const existing = db.prepare("SELECT id, content_hash, visible FROM knowledge_entries").all() as Array<{ id: string; content_hash: string; visible: number }>;
+  const existing = db.prepare("SELECT id, content_hash, visible, rel_path FROM knowledge_entries").all() as Array<{ id: string; content_hash: string; visible: number; rel_path: string }>;
   const known = new Map(existing.map((row) => [row.id, row]));
   const seen = new Set<string>();
   let added = 0;
@@ -152,7 +155,8 @@ export function applyKnowledgeSnapshot(snapshot: KnowledgeSnapshot): ApplySummar
         now: timestamp,
       };
       if (!previous) { insert.run(params); added += 1; continue; }
-      if (previous.content_hash !== entry.contentHash || previous.visible !== 1) { update.run(params); updated += 1; continue; }
+      // 路径变化也要写回索引；内容没变时哈希不变，加工结果仍然复用。
+      if (previous.content_hash !== entry.contentHash || previous.visible !== 1 || previous.rel_path !== entry.relPath) { update.run(params); updated += 1; continue; }
       touch.run({ id: entry.id, now: timestamp });
       unchanged += 1;
     }
@@ -241,27 +245,40 @@ export function listReadingNotes(entryIds: string[]) {
   return notes;
 }
 
-export function saveReadingNote(record: ReadingNoteRecord) {
-  getDb().prepare(`INSERT INTO knowledge_reading_notes(entry_id, prompt_version, source_hash, model, status, content_json, error, generated_at, attempted_at)
-    VALUES (@entry_id, @prompt_version, @source_hash, @model, @status, @content, @error, @generated_at, @attempted_at)
-    ON CONFLICT(entry_id) DO UPDATE SET prompt_version=@prompt_version, source_hash=@source_hash, model=@model, status=@status, content_json=@content, error=@error, generated_at=@generated_at, attempted_at=@attempted_at`)
+export function saveReadingNoteSuccess(record: ReadingNoteRecord) {
+  getDb().prepare(`INSERT INTO knowledge_reading_notes(entry_id, prompt_version, source_hash, model, status, content_json, error, generated_at, attempted_at, attempted_source_hash)
+    VALUES (@entry_id, @prompt_version, @source_hash, @model, 'ready', @content, NULL, @generated_at, @attempted_at, @source_hash)
+    ON CONFLICT(entry_id) DO UPDATE SET prompt_version=@prompt_version, source_hash=@source_hash, model=@model, status='ready', content_json=@content, error=NULL, generated_at=@generated_at, attempted_at=@attempted_at, attempted_source_hash=@source_hash`)
     .run({
       entry_id: record.entryId,
       prompt_version: record.promptVersion,
       source_hash: record.sourceHash,
       model: record.model,
-      status: record.status,
       content: record.content ? JSON.stringify(record.content) : null,
-      error: record.error,
       generated_at: record.generatedAt,
       attempted_at: record.attemptedAt,
+    });
+}
+
+// 失败只记录这次尝试；上一次成功的内容、来源哈希和规程版本保持不动，
+// 这样"旧说明 + 旧来源版本"仍然对应，待加工统计也能靠哈希差异识别出来。
+export function saveReadingNoteFailure(input: { entryId: string; attemptedSourceHash: string; model: string; error: string; attemptedAt: string }) {
+  getDb().prepare(`INSERT INTO knowledge_reading_notes(entry_id, prompt_version, source_hash, model, status, content_json, error, generated_at, attempted_at, attempted_source_hash)
+    VALUES (@entry_id, '', '', @model, 'failed', NULL, @error, NULL, @attempted_at, @attempted_hash)
+    ON CONFLICT(entry_id) DO UPDATE SET status='failed', error=@error, attempted_at=@attempted_at, attempted_source_hash=@attempted_hash`)
+    .run({
+      entry_id: input.entryId,
+      model: input.model,
+      error: input.error,
+      attempted_at: input.attemptedAt,
+      attempted_hash: input.attemptedSourceHash,
     });
 }
 
 export function listEntriesNeedingNote(promptVersion: string, limit: number) {
   const rows = getDb().prepare(`SELECT e.* FROM knowledge_entries e
     LEFT JOIN knowledge_reading_notes n ON n.entry_id = e.id
-    WHERE e.visible=1 AND (n.entry_id IS NULL OR n.source_hash <> e.content_hash OR n.prompt_version <> ? OR n.content_json IS NULL)
+    WHERE e.visible=1 AND (n.entry_id IS NULL OR n.source_hash <> e.content_hash OR n.prompt_version <> ? OR n.content_json IS NULL OR n.status = 'failed')
     ORDER BY CASE e.kind WHEN 'project' THEN 0 WHEN 'tool' THEN 1 ELSE 2 END, e.title
     LIMIT ?`).all(promptVersion, limit) as EntryRow[];
   return rows.map(toEntry);
@@ -270,7 +287,7 @@ export function listEntriesNeedingNote(promptVersion: string, limit: number) {
 export function countEntriesNeedingNote(promptVersion: string) {
   const row = getDb().prepare(`SELECT COUNT(*) AS count FROM knowledge_entries e
     LEFT JOIN knowledge_reading_notes n ON n.entry_id = e.id
-    WHERE e.visible=1 AND (n.entry_id IS NULL OR n.source_hash <> e.content_hash OR n.prompt_version <> ? OR n.content_json IS NULL)`)
+    WHERE e.visible=1 AND (n.entry_id IS NULL OR n.source_hash <> e.content_hash OR n.prompt_version <> ? OR n.content_json IS NULL OR n.status = 'failed')`)
     .get(promptVersion) as { count: number };
   return row.count;
 }

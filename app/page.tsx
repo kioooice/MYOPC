@@ -9,10 +9,10 @@ type Version = { id: string; ordinal: number; content: string; created_at?: stri
 type Deliverable = { id: string; title: string; type: string; accepted_version_id: string | null; review_status?: string; created_at?: string; versions: Version[] };
 type Decision = { id: string; rationale: string; adjustment: string; next_step: string; execution_status: string };
 type Trial = { id: string; title: string; goal: string; status: string; revision: number; project_id?: string | null; project?: { id: string; name: string; category: string } | null; code_repository?: string | null; code_branch?: string | null; code_commit?: string | null; next_step?: string | null; method: null | { title: string; revision_label: string; purpose: string; steps: string[] }; capture: null | { title: string; kind: string; source?: string }; captures?: Array<{ id: string; title: string; kind: string }>; deliverables: Deliverable[]; decisions: Decision[] };
-type KnowledgeNote = { status: "ready" | "failed" | "missing"; model: string | null; generatedAt: string | null; error: string | null; summary: string | null; brief: string | null; card: string | null };
+type KnowledgeNote = { status: "ready" | "stale" | "failed" | "missing"; stale: boolean; model: string | null; generatedAt: string | null; error: string | null; summary: string | null; brief: string | null; card: string | null };
 type KnowledgeItem = { id: string; kind: string; title: string; summary: string; status: string; tags: string[]; updatedAt: string | null; link: string | null; relPath: string; sourceUrls: string[]; note: KnowledgeNote };
 type KnowledgeNoteContent = { summary: string; facts: string[]; decisions: Array<{ title: string; detail: string }>; steps: string[]; conditions: string[]; open_questions: string[]; inferences: string[] };
-type KnowledgeDetail = KnowledgeItem & { body: string; sources: Array<{ label: string; url: string | null }>; related: Array<{ id: string; title: string; kind: string; status: string }>; noteContent: KnowledgeNoteContent | null; promptVersion: string };
+type KnowledgeDetail = KnowledgeItem & { body: string; sources: Array<{ label: string; url: string | null }>; related: Array<{ id: string; title: string; kind: string; status: string }>; noteContent: KnowledgeNoteContent | null; stale: boolean; promptVersion: string };
 type KnowledgeSync = { status: "ok" | "failed" | "never"; commit: string | null; branch: string | null; message: string | null; entryCount: number; addedCount: number; updatedCount: number; removedCount: number; startedAt: string | null; finishedAt: string | null };
 type KnowledgeOverviewResponse = { sync: KnowledgeSync; model: { configured: boolean; model: string | null; baseUrl: string | null }; promptVersion: string; repository: string; directory: string; pendingNotes: number; entries: KnowledgeItem[] };
 type WriteRequest = PendingWrite;
@@ -23,6 +23,7 @@ const kindLabel = (kind?: string) => kind === "failure" ? "从失败开始" : ki
 const feedbackKindLabel = (kind?: string) => kind === "review" ? "待审阅" : "待修改";
 const sourceLabel = (source?: string) => source === "user" ? "用户反馈" : source === "codex" ? "Codex 记录" : source === "system" ? "系统记录" : "反馈";
 const reviewStatusLabel = (status?: string) => status === "accepted" ? "已采用" : status === "needs_revision" ? "需要修改" : "待审阅";
+const noteStatusLabel = (status: string, stale = false) => status === "ready" ? "已有阅读说明" : status === "failed" ? "加工失败" : status === "stale" || stale ? "待更新" : "待生成";
 const shortTime = (value?: string | null) => value ? new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
 
 export default function Home() {
@@ -345,7 +346,7 @@ function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" |
     {items.length === 0
       ? <div className="quiet-empty"><BookOpen size={22} /><p>知识仓库里还没有{meta.title}条目</p></div>
       : <div className="asset-grid">{items.map((item) => <article className="asset-card knowledge-card" key={item.id}>
-        <div className="asset-card-head"><span>{item.status || meta.eyebrow}</span><b>{item.note.status === "ready" ? "已有阅读说明" : item.note.status === "failed" ? "加工失败" : "待生成"}</b></div>
+        <div className="asset-card-head"><span>{item.status || meta.eyebrow}</span><b>{noteStatusLabel(item.note.status, item.note.stale)}</b></div>
         <h2>{item.title}</h2>
         <p>{item.note.card || item.note.summary || item.summary || "暂无摘要"}</p>
         {item.tags.length > 0 && <div className="tag-row">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
@@ -372,14 +373,16 @@ function KnowledgeDetailView({ entry, busy, model, onBack, onGenerate }: { entry
       <div className="detail-meta">
         <span>{entry.status || "未标注状态"}</span>
         <span>条目更新 {entry.updatedAt || "未标注"}</span>
-        <span>{entry.note.status === "ready" ? `阅读说明：${entry.note.model || "模型"}${entry.note.generatedAt ? ` · ${new Date(entry.note.generatedAt).toLocaleString("zh-CN")}` : ""}` : entry.note.status === "failed" ? "上次加工失败" : "尚未生成阅读说明"}</span>
+        <span>{entry.noteContent ? `${entry.stale || entry.note.status === "stale" ? "上一次的阅读说明" : "阅读说明"}：${entry.note.model || "模型"}${entry.note.generatedAt ? ` · ${new Date(entry.note.generatedAt).toLocaleString("zh-CN")}` : ""}` : entry.note.status === "failed" ? "加工失败，暂无可用说明" : "尚未生成阅读说明"}</span>
       </div>
       <div className="detail-actions">
         <button className="primary-button" onClick={() => onGenerate(entry.id, false)} disabled={busy || !model?.configured} title={model?.configured ? undefined : "未配置模型密钥"}>{busy ? "处理中…" : "生成阅读说明"}</button>
         <button onClick={() => onGenerate(entry.id, true)} disabled={busy || !model?.configured}>重新生成</button>
         {entry.link && <a className="button-link" href={entry.link} target="_blank" rel="noreferrer">打开入口 <ExternalLink size={12} /></a>}
       </div>
-      {entry.note.error && <div className="inline-warning"><CircleAlert size={15} /><span>{entry.note.error}</span></div>}
+      {(entry.note.error || entry.stale || entry.note.status === "stale") && <div className="inline-warning"><CircleAlert size={15} /><span>{entry.note.status === "failed"
+        ? `上次加工失败：${entry.note.error || "未知原因"}。${entry.noteContent ? "下面是上一次可用的说明。" : ""}`
+        : entry.noteContent ? "原文或规程已更新，下面是上一次的说明，等待重新加工。" : "原文或规程已更新，说明待重新加工。"}</span></div>}
     </div>
     <section className="knowledge-section">
       <h2>阅读说明</h2>

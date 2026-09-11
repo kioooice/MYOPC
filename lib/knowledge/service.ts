@@ -31,7 +31,9 @@ function shortenCard(value: string | null | undefined) {
 }
 
 export type KnowledgeNoteSummary = {
-  status: "ready" | "failed" | "missing";
+  status: "ready" | "stale" | "failed" | "missing";
+  /** 原文或规程已变化，当前内容来自上一次加工。 */
+  stale: boolean;
   model: string | null;
   generatedAt: string | null;
   error: string | null;
@@ -59,6 +61,8 @@ export type KnowledgeDetail = KnowledgeListItem & {
   sources: Array<{ label: string; url: string | null }>;
   related: Array<{ id: string; title: string; kind: string; status: string }>;
   noteContent: ReadingNoteContent | null;
+  /** 说明是否来自旧版本原文或旧规程。 */
+  stale: boolean;
   promptVersion: string;
 };
 
@@ -68,16 +72,17 @@ function sourceLabel(source: KnowledgeSourceRef) {
 
 function noteSummary(entryId: string, contentHash: string): KnowledgeNoteSummary {
   const note = getReadingNote(entryId);
-  if (!note) return { status: "missing", model: null, generatedAt: null, error: null, summary: null, brief: null, card: null };
+  if (!note) return { status: "missing", stale: false, model: null, generatedAt: null, error: null, summary: null, brief: null, card: null };
   const stale = note.sourceHash !== contentHash || note.promptVersion !== PROMPT_VERSION;
-  const status = note.status === "ready" && !stale ? "ready" : note.content ? "ready" : "failed";
+  const status: KnowledgeNoteSummary["status"] = note.status === "failed" ? "failed" : stale ? "stale" : "ready";
   return {
     status,
+    stale,
     model: note.model,
     generatedAt: note.generatedAt,
     error: note.error,
     summary: note.content?.summary ?? null,
-    brief: note.content?.brief ?? null,
+    brief: shortenCard(note.content?.brief ?? null),
     card: shortenCard(note.content?.card),
   };
 }
@@ -130,10 +135,7 @@ export function getKnowledgeList(options: { kind?: string; query?: string } = {}
   const repository = getKnowledgeRepository();
   const branch = getKnowledgeSyncState().branch || "main";
   const entries = listKnowledgeEntries(options);
-  const notes = listReadingNotes(entries.map((entry) => entry.id));
   return entries.map((entry) => {
-    const note = notes.get(entry.id);
-    const stale = note ? note.sourceHash !== entry.contentHash || note.promptVersion !== PROMPT_VERSION : false;
     return {
       id: entry.id,
       kind: entry.kind,
@@ -145,17 +147,8 @@ export function getKnowledgeList(options: { kind?: string; query?: string } = {}
       link: entry.link,
       relPath: entry.relPath,
       sourceUrls: entry.sources.map((source) => knowledgeSourceUrl(source, repository, branch)).filter((url): url is string => Boolean(url)),
-      note: note
-        ? {
-            status: note.status === "ready" && !stale ? "ready" : note.content ? "ready" : "failed",
-            model: note.model,
-            generatedAt: note.generatedAt,
-            error: note.error,
-            summary: note.content?.summary ?? null,
-            brief: note.content?.brief ?? null,
-            card: shortenCard(note.content?.card),
-          }
-        : { status: "missing", model: null, generatedAt: null, error: null, summary: null, brief: null, card: null },
+      note: noteSummary(entry.id, entry.contentHash),
+
     };
   });
 }
@@ -190,7 +183,8 @@ export function getKnowledgeDetail(id: string, options: { kind?: string; query?:
       .map((relatedId) => getKnowledgeEntry(relatedId))
       .filter((item): item is KnowledgeEntryRecord => item !== null && item.visible)
       .map((item) => ({ id: item.id, title: item.title, kind: item.kind, status: item.status })),
-    noteContent: note && !stale ? note.content : null,
+    noteContent: note?.content ?? null,
+    stale,
     promptVersion: PROMPT_VERSION,
   };
 }

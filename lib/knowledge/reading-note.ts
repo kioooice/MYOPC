@@ -1,5 +1,5 @@
 import { KnowledgeError } from "./repo";
-import { countEntriesNeedingNote, getKnowledgeEntry, getReadingNote, listEntriesNeedingNote, saveReadingNote, type KnowledgeEntryRecord, type ReadingNoteContent, type ReadingNoteRecord } from "./store";
+import { countEntriesNeedingNote, getKnowledgeEntry, getReadingNote, listEntriesNeedingNote, saveReadingNoteFailure, saveReadingNoteSuccess, type KnowledgeEntryRecord, type ReadingNoteContent, type ReadingNoteRecord } from "./store";
 import { callChatModel, getModelConfig } from "./model";
 
 export const PROMPT_VERSION = "reading-note-v4";
@@ -112,54 +112,48 @@ async function generate(entry: KnowledgeEntryRecord, previous: ReadingNoteRecord
   const config = getModelConfig();
   const attemptedAt = new Date().toISOString();
   if (!config) {
-    const note: ReadingNoteRecord = {
-      entryId: entry.id, promptVersion: PROMPT_VERSION, sourceHash: entry.contentHash, model: "未配置",
-      status: "failed", content: previous?.content ?? null, error: "未设置 MYOPC_MODEL_API_KEY，模型加工未运行",
-      generatedAt: previous?.generatedAt ?? null, attemptedAt,
-    };
-    saveReadingNote(note);
-    return { entryId: entry.id, status: "failed", note, reason: note.error ?? undefined };
+    const message = "未设置 MYOPC_MODEL_API_KEY，模型加工未运行";
+    saveReadingNoteFailure({ entryId: entry.id, attemptedSourceHash: entry.contentHash, model: "未配置", error: message, attemptedAt });
+    return { entryId: entry.id, status: "failed", note: getReadingNote(entry.id) ?? undefined, reason: message };
   }
   const related = entry.related.map((id) => getKnowledgeEntry(id)).filter((item): item is KnowledgeEntryRecord => item !== null);
   try {
-    let content = "";
-    let model = config.model;
     let parsed: ReadingNoteContent | null = null;
+    let model = config.model;
+    // 模型调用与结果解析放在同一套重试里：截断、空内容和格式错误都允许再试一次。
     for (let attempt = 0; attempt < 2 && !parsed; attempt += 1) {
       const messages = attempt === 0
         ? [{ role: "system" as const, content: SYSTEM_PROMPT }, { role: "user" as const, content: buildUserPrompt(entry, related) }]
         : [
             { role: "system" as const, content: SYSTEM_PROMPT },
-            { role: "system" as const, content: "上一次回复被截断或不是有效 JSON。只输出一个 JSON 对象，不要解释、不要代码块。" },
+            { role: "system" as const, content: "上一次回复被截断、为空或不是有效 JSON。只输出一个 JSON 对象，不要解释、不要代码块。" },
             { role: "user" as const, content: buildUserPrompt(entry, related) },
           ];
       const budget = attempt === 0 ? config.maxTokens : Math.min(config.maxTokens * 2, 16000);
-      const response = await callChatModel(config, messages, budget);
-      content = response.content;
-      model = response.model;
-      try { parsed = parseReadingNoteContent(content); }
-      catch (error) {
-        const retryable = error instanceof KnowledgeError && (error.code === "model_response_invalid" || error.code === "model_response_truncated") && attempt === 0;
+      try {
+        const response = await callChatModel(config, messages, budget);
+        model = response.model;
+        parsed = parseReadingNoteContent(response.content);
+      } catch (error) {
+        const retryable = error instanceof KnowledgeError
+          && ["model_response_invalid", "model_response_truncated", "model_response_empty"].includes(error.code)
+          && attempt === 0;
         if (retryable) continue;
         throw error;
       }
     }
-    if (!parsed) throw new KnowledgeError("model_response_invalid", "模型两次都没有返回可解析的 JSON");
+    if (!parsed) throw new KnowledgeError("model_response_invalid", "模型两次都没有返回可解析的结果");
     const note: ReadingNoteRecord = {
       entryId: entry.id, promptVersion: PROMPT_VERSION, sourceHash: entry.contentHash, model,
       status: "ready", content: parsed, error: null, generatedAt: attemptedAt, attemptedAt,
+      attemptedSourceHash: entry.contentHash,
     };
-    saveReadingNote(note);
+    saveReadingNoteSuccess(note);
     return { entryId: entry.id, status: "ready", model, note };
   } catch (error) {
     const message = error instanceof Error ? error.message : "模型加工失败";
-    const note: ReadingNoteRecord = {
-      entryId: entry.id, promptVersion: PROMPT_VERSION, sourceHash: entry.contentHash, model: config.model,
-      status: "failed", content: previous?.content ?? null, error: message,
-      generatedAt: previous?.generatedAt ?? null, attemptedAt,
-    };
-    saveReadingNote(note);
-    return { entryId: entry.id, status: "failed", model: config.model, note, reason: message };
+    saveReadingNoteFailure({ entryId: entry.id, attemptedSourceHash: entry.contentHash, model: config.model, error: message, attemptedAt });
+    return { entryId: entry.id, status: "failed", model: config.model, note: getReadingNote(entry.id) ?? undefined, reason: message };
   }
 }
 

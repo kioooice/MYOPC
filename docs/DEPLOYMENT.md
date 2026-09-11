@@ -60,7 +60,7 @@ npx tsx scripts/knowledge-sync.ts --force-entry id # 强制重做某一条
 1. 本地确认改动已提交并推送，记录提交 SHA。
 2. 服务器 `git -C /opt/apps/opc fetch` 并切到目标提交，工作区保持干净。
 3. 备份 `/opt/data/opc/myopc.sqlite`（SQLite backup API，校验完整性与外键）。
-4. `docker compose -f docker-compose.prod.yml up -d --build`。
+4. `docker compose -f deploy/opc-server.compose.yml up -d --build`（项目名固定为 `opc`，构建参数带 `DEBIAN_MIRROR`）。
 5. 核对 `MYOPC_RELEASE`、`/api/v1/health`、`/api/v1/knowledge` 与 `:3010` 的实际返回。
 
 知识内容与代码分开更新：只改知识仓库时不需要重新部署，同步一次即可；改代码或依赖才重建容器。
@@ -95,4 +95,4 @@ npm run db:restore -- --file D:\private\backups\myopc.sqlite --directory D:\priv
 
 ## 历史文件
 
-`Dockerfile`、`docker-compose.yml`、`deploy/`、`scripts/deploy-opc.sh` 保留供参考；`deploy-opc.sh` 依赖旧 systemd 服务与 Tailscale，不直接用于当前部署。
+`Dockerfile` 与 `deploy/opc-server.compose.yml`、`deploy/opc-server.conf` 是当前使用的部署文件；`docker-compose.yml`、旧 `deploy/main-site.conf`、`scripts/deploy-opc.sh` 只作历史参考，`deploy-opc.sh` 依赖旧 systemd 服务与 Tailscale，不用于当前部署。
