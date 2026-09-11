@@ -335,7 +335,7 @@ function renderMarkdown(body: string) {
   return nodes;
 }
 
-const NOTE_CATEGORY_ORDER = ["工作方式", "产品设计", "工程运维", "流程记录", "决策"];
+const NOTE_CATEGORY_ORDER = ["方法", "经验", "判断"];
 const PROJECT_STATUS_ORDER = ["进行中", "原型验证", "方向验证", "已暂停"];
 
 function groupNotesByCategory(items: KnowledgeItem[]) {
@@ -366,7 +366,7 @@ function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" |
     ? { eyebrow: "Projects", title: "项目", subtitle: "来自知识仓库的项目概况；进行中的排前面，已暂停的排在最后。" }
     : kind === "tool"
       ? { eyebrow: "Toolbox", title: "工具", subtitle: "真正可调用的工具与入口，说明和维护都在知识仓库里。" }
-      : { eyebrow: "Space", title: "空间", subtitle: "经过实践留下的方法、经验与判断，按分类排列。" };
+      : { eyebrow: "Space", title: "空间", subtitle: "经过实践留下的方法、经验与判断。" };
   const groups = kind === "note"
     ? groupNotesByCategory(items)
     : kind === "project"
