@@ -62,4 +62,4 @@ npm run lint
 npm run build
 ```
 
-界面改动要实际打开页面；数据逻辑改动跑相关测试。文档见 [当前状态](docs/STATUS.md)、[待办](TASKS.md)、[产品说明](docs/PRODUCT_SPEC.md)、[代码架构](docs/ARCHITECTURE.md)、[运行与部署](docs/DEPLOYMENT.md)。
+界面改动要实际打开页面；数据逻辑改动跑相关测试。文档见 [阶段记录](docs/PROJECT_LOG.md)、[当前状态](docs/STATUS.md)、[待办](TASKS.md)、[产品说明](docs/PRODUCT_SPEC.md)、[代码架构](docs/ARCHITECTURE.md)、[运行与部署](docs/DEPLOYMENT.md)。
