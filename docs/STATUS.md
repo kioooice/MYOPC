@@ -9,7 +9,7 @@ OPC 从“自建素材、行动与成果的工作台”改为**读取独立知�
 - 知识解析与索引：`lib/knowledge/`（YAML 子集解析、快照读取、SQLite 索引、同步状态）。
 - 模型加工：“阅读说明”规程当前为 `reading-note-v4`（版本以 `lib/knowledge/reading-note.ts` 为准），输出完整说明、列表卡 `card`、首页 `brief` 三档；模型调用与结果解析在同一套重试里，截断、空内容和格式错误都会再试一次。
 - 数据表：`knowledge_entries`、`knowledge_reading_notes`、`knowledge_sync_state`（migration 10）。
-- 接口：`GET /api/v1/knowledge`、`GET /api/v1/knowledge/entries/:id`、`POST /api/v1/knowledge/sync|notes|process`；`sync` 会先把知识仓库快进到远端最新（拉不动时说明原因并只重建索引）。
+- 接口：`GET /api/v1/knowledge`、`GET /api/v1/knowledge/entries/:id`、`POST /api/v1/knowledge/sync|notes|process`；`sync` 会先把知识仓库快进到远端最新（拉不动时说明原因并只重建索引）。条目状态分为 ready / stale（待更新）/ failed / missing；加工失败会保留上一次可用说明，并继续算作待加工。
 - 页面：总览、项目、工具、空间改为知识条目视图；条目详情显示阅读说明、原文、来源、更新时间与加工状态；同步与加工在页面上手动触发。
 - 命令行与定时任务：`npx tsx scripts/knowledge-sync.ts`，服务器用 `deploy/knowledge-sync.sh` + systemd timer。
 
@@ -22,7 +22,7 @@ OPC 从“自建素材、行动与成果的工作台”改为**读取独立知�
 
 ## 服务器部署（2026-09-10）
 
-- 应用提交 `8714fbe` 已部署到 `124.222.190.89`，容器 `myopc` 由本仓库 `deploy/opc-server.compose.yml` 构建（`name: opc`），健康检查返回 `status=ok`、`release=8714fbe`。
+- 应用提交 `df248f8` 已部署到 `124.222.190.89`，容器 `myopc` 由本仓库 `deploy/opc-server.compose.yml` 构建（`name: opc`），健康检查返回 `status=ok`、`release=df248f8`。
 - 挂载：`/opt/data/opc → /data`（数据）、`/opt/data/knowledge/myopc → /knowledge`（只读知识仓库）、`/opt/data/knowledge/commit.txt → /knowledge-commit.txt`（来源版本，容器内没有 git）。
 - 代码与知识仓库都改用只读 Deploy Key：`/root/.ssh/myopc-deploy`、`/root/.ssh/myopc-knowledge`；服务器可自行 `git fetch`，不再依赖本地传输。
 - 服务器同步结果：16 条索引、0 条待加工、16 份阅读说明 `ready`。
