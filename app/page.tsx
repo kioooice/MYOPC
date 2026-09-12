@@ -250,12 +250,11 @@ export default function Home() {
         <button className={view === "toolbox" || (view === "entry" && lastEntrySection === "toolbox") ? "nav-item active" : "nav-item"} onClick={() => goTo("toolbox")}><Rocket size={17} /><span>工具</span>{knowledgeTools.length > 0 && <b>{knowledgeTools.length}</b>}</button>
         <button className={view === "space" || (view === "entry" && lastEntrySection === "space") ? "nav-item active" : "nav-item"} onClick={() => goTo("space")}><BookOpen size={17} /><span>空间</span>{knowledgeNotes.length > 0 && <b>{knowledgeNotes.length}</b>}</button>
       </nav>
-      <div className="sidebar-foot"><span><i /> 共享工作状态</span><small>Codex 驱动</small></div>
     </aside>
 
     <section className="main-panel">
       {view === "overview" ? (
-      <header className="main-header"><button className="icon-button menu-button" onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}>{sidebarOpen ? <Menu size={19} /> : <PanelLeftOpen size={19} />}</button><div className="breadcrumb"><strong>个人资产空间</strong></div>{(view === "overview" || view === "active") && <div className="header-sync" title={knowledgeTooltip}><span>{knowledgeSync?.finishedAt ? `知识 ${new Date(knowledgeSync.finishedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}` : "未同步"}</span><button className="header-action" onClick={() => void syncKnowledge()} disabled={knowledgeBusy} title="同步知识仓库并更新索引">{knowledgeBusy ? "处理中…" : "同步"}</button><button className="header-action" onClick={() => void processPending()} disabled={knowledgeBusy || pendingNotes === 0 || !knowledgeModel?.configured} title={pendingNotes > 0 ? `生成 ${pendingNotes} 条阅读说明` : "没有待加工的条目"}>{pendingNotes > 0 ? `加工 ${pendingNotes}` : "加工"}</button><button className="icon-button" onClick={() => void load()} disabled={refreshing} title="刷新共享状态" aria-label="刷新共享状态"><RefreshCw size={15} className={refreshing ? "spin" : ""} /></button></div>}</header>
+      <header className="main-header"><button className="icon-button menu-button" onClick={() => setSidebarOpen(!sidebarOpen)} title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}>{sidebarOpen ? <Menu size={19} /> : <PanelLeftOpen size={19} />}</button><div className="breadcrumb"><strong>个人资产空间</strong></div>{(view === "overview" || view === "active") && <div className="header-sync" title={knowledgeTooltip}><details className="sync-details"><summary>{knowledgeSync?.finishedAt ? "上次同步 " + new Date(knowledgeSync.finishedAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "未同步"}</summary><div className="sync-panel"><span>来源版本 {knowledgeSync?.commit ? knowledgeSync.commit.slice(0, 8) : "未知"}</span><span>{pendingNotes > 0 ? pendingNotes + " 条待更新" : "没有待更新的条目"}</span>{knowledgeSync?.message && <span>{knowledgeSync.message}</span>}{knowledgeSync?.status === "failed" && <span>上次同步失败</span>}</div></details><button className="header-action" onClick={() => void syncKnowledge()} disabled={knowledgeBusy} title="同步知识仓库并更新索引">{knowledgeBusy ? "处理中…" : "同步"}</button><button className="header-action" onClick={() => void processPending()} disabled={knowledgeBusy || pendingNotes === 0 || !knowledgeModel?.configured} title={pendingNotes > 0 ? `生成 ${pendingNotes} 条阅读说明` : "没有待加工的条目"}>{pendingNotes > 0 ? `加工 ${pendingNotes}` : "加工"}</button><button className="icon-button" onClick={() => void load()} disabled={refreshing} title="刷新共享状态" aria-label="刷新共享状态"><RefreshCw size={15} className={refreshing ? "spin" : ""} /></button></div>}</header>
       ) : (
         !sidebarOpen && <button className="icon-button floating-menu" onClick={() => setSidebarOpen(true)} title="展开侧边栏" aria-label="展开侧边栏"><PanelLeftOpen size={17} /></button>
       )}
@@ -374,20 +373,28 @@ function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" |
     : kind === "project"
       ? [{ label: null as string | null, items: sortProjectsByStatus(items) }]
       : [{ label: null as string | null, items }];
-  const renderCard = (item: KnowledgeItem) => <article className="asset-card knowledge-card" key={item.id}>
-    <div className="asset-card-head"><span>{item.status || meta.eyebrow}</span><b>{noteStatusLabel(item.note.status, item.note.stale)}</b></div>
-    <h2>{item.title}</h2>
-    <p>{item.note.card || item.note.summary || item.summary || "暂无摘要"}</p>
-    {item.tags.length > 0 && <div className="tag-row">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
-    <dl>
-      <div><dt>更新</dt><dd>{item.updatedAt || "未标注"}</dd></div>
-      <div><dt>原文</dt><dd>{item.relPath}</dd></div>
-    </dl>
-    <div className="knowledge-actions">
-      <button className="primary-button" onClick={() => onOpen(item.id, item.kind)}>查看原文与说明</button>
-      {item.link && <a href={item.link} target="_blank" rel="noreferrer">打开入口 <ExternalLink size={12} /></a>}
-    </div>
-  </article>;
+  const sourceLink = (item: KnowledgeItem) => {
+    if (!item.link) return null;
+    const isRepo = /github\.com/i.test(item.link);
+    return { href: item.link, label: item.kind === "tool" && !isRepo ? "打开工具" : isRepo ? "查看源码" : "打开入口" };
+  };
+  const openLabel = (kind: string) => kind === "project" ? "查看项目" : kind === "tool" ? "查看说明" : "阅读笔记";
+  const renderCard = (item: KnowledgeItem) => {
+    const link = sourceLink(item);
+    const noteHint = item.note.status === "ready" ? null : noteStatusLabel(item.note.status, item.note.stale);
+    const usingSourceSummary = !item.note.card && !item.note.summary && Boolean(item.summary);
+    return <article className="asset-card knowledge-card" key={item.id}>
+      <div className="asset-card-head"><span>{kind === "note" ? item.category || "笔记" : item.status || meta.eyebrow}</span>{noteHint && <b>{noteHint}</b>}</div>
+      <h2>{item.title}</h2>
+      <p>{item.note.card || item.note.summary || item.summary || "暂无摘要"}{usingSourceSummary && <em className="source-summary-mark">原文摘要</em>}</p>
+      {item.tags.length > 0 && <div className="tag-row">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
+      <div className="asset-card-foot">{item.updatedAt ? "更新 " + item.updatedAt : "未标注更新时间"}</div>
+      <div className="knowledge-actions">
+        <button className="primary-button" onClick={() => onOpen(item.id, item.kind)}>{openLabel(item.kind)}</button>
+        {link && <a href={link.href} target="_blank" rel="noreferrer">{link.label} <ExternalLink size={12} /></a>}
+      </div>
+    </article>;
+  };
   return <div className="asset-view">
     <div className="view-head">
       <div className="view-title"><span className="eyebrow">{meta.eyebrow}</span><h1>{meta.title}</h1><p>{meta.subtitle}</p></div>
@@ -421,7 +428,7 @@ function KnowledgeDetailView({ entry, busy, model, onBack, onGenerate }: { entry
       <div className="detail-actions">
         <button className="primary-button" onClick={() => onGenerate(entry.id, false)} disabled={busy || !model?.configured} title={model?.configured ? undefined : "未配置模型密钥"}>{busy ? "处理中…" : "生成阅读说明"}</button>
         <button onClick={() => onGenerate(entry.id, true)} disabled={busy || !model?.configured}>重新生成</button>
-        {entry.link && <a className="button-link" href={entry.link} target="_blank" rel="noreferrer">打开入口 <ExternalLink size={12} /></a>}
+        {entry.link && <a className="button-link" href={entry.link} target="_blank" rel="noreferrer">{/github\.com/i.test(entry.link) ? "查看源码" : entry.kind === "tool" ? "打开工具" : "打开入口"} <ExternalLink size={12} /></a>}
       </div>
       {(entry.note.error || entry.stale || entry.note.status === "stale") && <div className="inline-warning"><CircleAlert size={15} /><span>{entry.note.status === "failed"
         ? `上次加工失败：${entry.note.error || "未知原因"}。${entry.noteContent ? "下面是上一次可用的说明。" : ""}`
@@ -439,15 +446,15 @@ function KnowledgeDetailView({ entry, busy, model, onBack, onGenerate }: { entry
         {note.inferences.length > 0 && <><h3>模型推断（非原文事实）</h3><ul className="inference-list">{note.inferences.map((item, index) => <li key={`inference-${index}`}>{item}</li>)}</ul></>}
       </>}
     </section>
-    <section className="knowledge-section">
-      <h2>原文</h2>
+    <details className="knowledge-details">
+      <summary>原文（{entry.relPath}）</summary>
       <div className="markdown-body">{renderMarkdown(entry.body)}</div>
-    </section>
-    <section className="knowledge-section">
-      <h2>来源</h2>
+    </details>
+    <details className="knowledge-details">
+      <summary>来源与相关知识</summary>
       {entry.sources.length === 0 ? <p className="muted-text">条目没有标注来源。</p> : <ul className="source-list">{entry.sources.map((source) => <li key={source.label}>{source.url ? <a href={source.url} target="_blank" rel="noreferrer">{source.label} <ExternalLink size={11} /></a> : source.label}</li>)}</ul>}
       {entry.related.length > 0 && <><h3>相关知识</h3><ul className="source-list">{entry.related.map((item) => <li key={item.id}>{item.title}（{item.kind === "project" ? "项目" : item.kind === "tool" ? "工具" : "笔记"}）</li>)}</ul></>}
-    </section>
+    </details>
   </div>;
 }
 
@@ -460,7 +467,17 @@ function OverviewView({ projects, tools, notes, onOpen, onNavigate }: { projects
   return <div className="overview-view">
     <div className="overview-board">
       {columns.map((column) => {
-        const items = [...column.items].sort((left, right) => (right.updatedAt || "").localeCompare(left.updatedAt || "")).slice(0, 5);
+        const isProjects = column.view === "projects";
+        const pool = isProjects ? column.items.filter((item) => item.status !== "已暂停") : column.items;
+        const items = [...pool].sort((left, right) => {
+          if (isProjects) {
+            const rank = (item: KnowledgeItem) => { const index = PROJECT_STATUS_ORDER.indexOf(item.status); return index === -1 ? PROJECT_STATUS_ORDER.length : index; };
+            const byStatus = rank(left) - rank(right);
+            if (byStatus !== 0) return byStatus;
+          }
+          return (right.updatedAt || "").localeCompare(left.updatedAt || "");
+        }).slice(0, 5);
+        const pausedCount = isProjects ? column.items.filter((item) => item.status === "已暂停").length : 0;
         return <section className="overview-column" key={column.view}>
           <button className="overview-count" onClick={() => onNavigate(column.view)} title={`打开${column.label}`}><span>{column.label}</span><strong>{column.items.length}</strong><ChevronRight size={14} /></button>
           <div className="overview-items">
@@ -469,6 +486,7 @@ function OverviewView({ projects, tools, notes, onOpen, onNavigate }: { projects
               <small>{item.note.brief || item.summary || "暂无摘要"}</small>
             </button>)}
             {items.length === 0 && <p className="overview-item-empty">还没有内容</p>}
+            {pausedCount > 0 && <p className="overview-column-hint">暂停中的 {pausedCount} 个项目在项目页查看</p>}
           </div>
         </section>;
       })}
