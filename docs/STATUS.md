@@ -18,13 +18,21 @@
 - 知识仓库同步到 `70cadcda`：新增 4 条（含 kill-doc 工具、两条笔记与首个 Map），25 条索引，无未索引文件。
 - 真实模型加工 kill-doc Map 成功；`GET /api/v1/knowledge?kind=map` 与条目详情返回 `kind=map`、`mapType=architecture`，工具条目详情返回相关图谱。
 - 浏览器走查：图谱入口 → kill-doc Map 列表 → 详情 Mermaid 正常渲染（含「查看大图」放大到 150%）→ 相关工具跳转 → 工具页相关图谱跳回 → 返回图谱列表；另用故意写坏的临时 Mermaid 验证失败回退后已还原知识仓库（工作区干净）。
-- 规程版本变化后所有条目都会重新进入待加工：本轮只重新加工了 kill-doc Map 一条，其余 24 条待加工（本地点「加工」或服务器定时任务会按新规程重做）。
+- 规程版本变化会让所有条目重新进入待加工：本地只重新加工了 kill-doc Map 一条；其余 24 条在 2026-09-15 部署时已用 v6 全部重做。
+
+### 服务器部署（2026-09-15）
+
+- `/opt/apps/opc` 快进到 `6efa94b`，`.env` 中 `MYOPC_RELEASE=6efa94b`；`sudo docker compose -f deploy/opc-server.compose.yml up -d --build` 重建并重启容器，`restarts=0`。
+- 部署前备份 `/opt/backups/opc/pre-maps-6efa94b.sqlite`（SQLite backup API；`integrity_check=ok`，无外键违规）。
+- 容器内同步知识仓库到 `70cadcda`：25 条可见条目、0 个未索引文件、`promptVersion=reading-note-v6`。
+- 真实模型加工：先做 kill-doc Map，随后批量重做全部条目，25/25 为 v6 `ready`、0 待加工、无失败状态。
+- 接口：`127.0.0.1:3011/api/v1/health` 返回 `release=6efa94b`；`GET /api/v1/knowledge?kind=map` 返回 1 条 `kind=map` / `mapType=architecture`；`kill-doc` 详情包含相关图谱；外部 `http://124.222.190.89:3010/` 返回 401（Basic Auth 生效）。
+- 页面：从本机经 SSH 隧道访问服务器实例（绕过 OpenResty 网关）走查图谱入口 → 列表 → 详情，2 张 Mermaid 正常渲染，「关键分界 / 内容能力边界 / 可迁移理解」与「相关工具 / 相关方法」分组正确。
 
 ### 未解决 / 未验证
 
-- 本次改造尚未部署到服务器，线上仍是旧版本。
-- 其余 24 条阅读说明仍由 v5 生成（v6 只改 Map 分支，其它类型的提示词与 v5 相同，重做后内容预期不变）。
-- Map 详情页只渲染原文里的 Mermaid，不提供在线编辑；没有真实持续使用的 Map 清单，列表排序暂按 kind + 标题。
+- `:3010` 的登录态页面未在浏览器实测（Basic Auth 口令不在服务器 `.env` 中），只确认了 401 与内部实例渲染；用户登录后可自行确认。
+- 目前只有一条真实 Map，列表与详情在更多图谱下的效果未验证；Map 只渲染原文 Mermaid，不提供在线编辑。
 
 ## 2026-09-12 加工规程更新（代码已修改，服务器未部署核对）
 
