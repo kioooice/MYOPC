@@ -382,17 +382,19 @@ function sortProjectsByStatus(items: KnowledgeItem[]) {
 function KnowledgeListView({ kind, items, onOpen, reuse }: { kind: "project" | "tool" | "note" | "map"; items: KnowledgeItem[]; onOpen: (id: string, kind: string) => void; reuse?: ReuseOverview | null }) {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const meta = kind === "project"
-    ? { eyebrow: "Projects", title: "项目", subtitle: "来自知识仓库的项目概况；进行中的排前面，已暂停的排在最后。" }
+    ? { eyebrow: "Projects", title: "项目", subtitle: "正在推进的项目；已暂停与不再维护的收在页面底部的折叠区。" }
     : kind === "tool"
       ? { eyebrow: "Toolbox", title: "工具", subtitle: "真正可调用的工具与入口，说明和维护都在知识仓库里。" }
       : kind === "note"
         ? { eyebrow: "Space", title: "空间", subtitle: "经过实践留下的方法、经验与判断。" }
         : { eyebrow: "Maps", title: "图谱", subtitle: "架构、流程、判断与关系的可视化理解。" };
   const allGroups = kind === "note" ? groupNotesByCategory(items) : [];
+  const activeProjects = items.filter((item) => item.status !== "已暂停");
+  const pausedProjects = sortProjectsByStatus(items.filter((item) => item.status === "已暂停"));
   const groups = kind === "note"
     ? (categoryFilter ? allGroups.filter((group) => group.label === categoryFilter) : allGroups)
     : kind === "project"
-      ? [{ label: null as string | null, items: sortProjectsByStatus(items) }]
+      ? [{ label: null as string | null, items: sortProjectsByStatus(activeProjects) }]
       : [{ label: null as string | null, items }];
   const sourceLink = (item: KnowledgeItem) => {
     if (!item.link) return null;
@@ -479,6 +481,10 @@ function KnowledgeListView({ kind, items, onOpen, reuse }: { kind: "project" | "
         {group.label && <div className="asset-group-head"><span>{group.label}</span><small>{group.items.length}</small></div>}
         <div className="asset-grid">{group.items.map(renderCard)}</div>
       </section>)}
+    {kind === "project" && pausedProjects.length > 0 && <details className="paused-projects">
+      <summary><strong>已暂停 / 不再维护</strong><span>{pausedProjects.length} 个项目 · 历史记录仍可查看</span></summary>
+      <div className="asset-grid">{pausedProjects.map(renderCard)}</div>
+    </details>}
   </div>;
 }
 

@@ -124,3 +124,10 @@
 .reuse-task{color:#3c3e3a;font-size:clamp(11px,0.8vw,15px);line-height:1.6}
 .reuse-meta{color:#8a8c86;font-size:clamp(10px,0.7vw,13px);line-height:1.6}
 .reuse-hint{margin:12px 0 0!important;color:#9a9b97;font-size:clamp(10px,0.7vw,13px)}
+
+/* 项目页：已暂停 / 不再维护的折叠区。 */
+.paused-projects{margin-top:clamp(20px,1.8vw,34px);border-top:1px solid var(--soft);padding-top:clamp(12px,1.2vw,20px)}
+.paused-projects>summary{cursor:pointer;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;color:#6b6d67}
+.paused-projects>summary strong{font-size:clamp(12px,0.9vw,16px)}
+.paused-projects>summary span{color:#9a9b97;font-size:clamp(10px,0.72vw,14px)}
+.paused-projects[open]>summary{margin-bottom:14px}
