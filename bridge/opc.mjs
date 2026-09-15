@@ -192,7 +192,9 @@ async function runDoctor(config) {
   let reachable = false;
   let detail = "";
   try {
-    const response = await fetch(`${String(config.serverUrl).replace(/\/+$/, "")}/api/v1/health`, { signal: AbortSignal.timeout(5000) });
+    const headers = {};
+    if (config.auth?.username) headers.authorization = `Basic ${Buffer.from(`${config.auth.username}:${config.auth.password ?? ""}`).toString("base64")}`;
+    const response = await fetch(`${String(config.serverUrl).replace(/\/+$/, "")}/api/v1/health`, { headers, signal: AbortSignal.timeout(5000) });
     reachable = response.ok;
     detail = reachable ? await response.text() : `HTTP ${response.status}`;
   } catch (error) {
