@@ -6,7 +6,8 @@ MYOPC 是 Next.js 单体应用：React / TypeScript 前端、Node.js 服务端�
 
 | 路径 | 用途 |
 | --- | --- |
-| app/page.tsx、app/globals.css | 页面与样式：总览、项目、工具、空间、条目详情、历史行动 |
+| app/page.tsx、app/globals.css | 页面与样式：总览、项目、工具、空间、图谱、条目详情、历史行动 |
+| app/mermaid-diagram.tsx | 图谱详情页的 Mermaid 渲染（宽度自适应、查看大图、失败回退源码） |
 | app/api/v1/[...segments]/route.ts | HTTP 请求分发 |
 | lib/knowledge/yaml.ts | 知识仓库使用的少量 YAML 解析（`key: value`、内联列表、列表项） |
 | lib/knowledge/repo.ts | 读取知识目录，解析 front matter、来源引用并计算内容哈希 |
@@ -20,7 +21,7 @@ MYOPC 是 Next.js 单体应用：React / TypeScript 前端、Node.js 服务端�
 ## 知识数据流
 
 1. `MYOPC_KNOWLEDGE_DIR` 指向知识仓库检出目录。同步时会先尝试把检出更新到远端最新（`git fetch` + 只允许快进合并，分支由 `MYOPC_KNOWLEDGE_BRANCH` 指定，默认 `main`）；目录不是 Git 检出、没有 git、工作区有未提交改动或拉取失败时，只重建索引并在结果里说明原因。
-2. 同步读取 `projects/`、`tools/`、`notes/` 下的 Markdown，校验 `id`、`kind` 与目录一致，计算内容哈希。
+2. 同步读取 `projects/`、`tools/`、`notes/`、`maps/` 下的 Markdown，校验 `id`、`kind` 与目录一致（`project` / `tool` / `note` / `map`），计算内容哈希。
 3. 新增或内容变化的条目写入 `knowledge_entries`；从仓库消失的条目标记 `visible=0`，不再出现在页面，也不删除历史结果。
 4. 需要加工的条目（新增、内容变化、规程变化或上次失败）进入待加工队列。
 5. 加工按规程请求模型，输出经校验后写入 `knowledge_reading_notes`，记录来源哈希、规程版本、模型和生成时间。
@@ -30,7 +31,15 @@ MYOPC 是 Next.js 单体应用：React / TypeScript 前端、Node.js 服务端�
 
 ## 条目的分类字段
 
-`notes/` 的条目在 front matter 里带 `category`（方法 / 经验 / 判断，词表在知识仓库 README），主题放在 tags 里，其它字段原样进入 `extra_json`。分类或路径变化会刷新索引，但**不**改变内容哈希，因此不会触发重新加工；只有正文或标签等实质内容变化才重新生成阅读说明。
+`notes/` 的条目在 front matter 里带 `category`（方法 / 经验 / 判断，词表在知识仓库 README），主题放在 tags 里；`maps/` 的条目带 `map_type`（architecture / workflow / decision / relationship）。这两个字段和其它未识别字段一起原样进入 `extra_json`，服务层再以 `category` / `mapType` 暴露给页面。分类或路径变化会刷新索引，但**不**改变内容哈希，因此不会触发重新加工；只有正文或标签等实质内容变化才重新生成阅读说明。
+
+`related` 是唯一的关系来源，不引入图数据库：详情接口把「本条目声明的 related」与「声明了本条目的条目」合并后返回。因此只在 Map 一侧写 `related: [kill-doc]`，工具页也会出现「相关图谱」；页面按 kind 分组为相关项目 / 相关工具 / 相关方法 / 相关图谱，点击可继续跳转。
+
+## 图谱（map）的加工与展示
+
+Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知识仓库里，模型只生成解释和辅助阅读（`summary`、`brief`、`card`、`facts`、`decisions`、`conditions`、`inferences`，`steps` 留空）。规程 `reading-note-v6` 起加入图谱规则并明确要求：不得修改 Mermaid、不得重设图结构、不得新增或删除节点、不得把推断写成图中事实。加工结果只写入 `knowledge_reading_notes`，不写回原文，所以模型不可能覆盖仓库里的 Mermaid。
+
+详情页把正文第一个 Mermaid 块作为主图放在标题下方，其余章节按原文顺序渲染，章节里的其它 Mermaid 块同样渲染成图（主图不重复出现）。渲染由客户端依赖 `mermaid` 完成，宽度自适应，支持「查看大图」放大与全屏；渲染失败时显示错误信息和源码回退，并清理 mermaid 遗留的临时节点。列表页不渲染 Mermaid，只显示标题、Map 类型、一句话说明、核心结构简述和标签。
 
 ## 数据表
 

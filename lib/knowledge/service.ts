@@ -55,6 +55,8 @@ export type KnowledgeListItem = {
   sourceUrls: string[];
   /** notes 的分类（工作方式 / 产品设计 / 工程运维 / 流程记录 / 决策）。 */
   category: string | null;
+  /** maps 的类型（architecture / workflow / decision / relationship）。 */
+  mapType: string | null;
   note: KnowledgeNoteSummary;
 };
 
@@ -150,6 +152,7 @@ export function getKnowledgeList(options: { kind?: string; query?: string } = {}
       relPath: entry.relPath,
       sourceUrls: entry.sources.map((source) => knowledgeSourceUrl(source, repository, branch)).filter((url): url is string => Boolean(url)),
       category: typeof entry.extra?.category === "string" && entry.extra.category.trim() ? entry.extra.category.trim() : null,
+      mapType: entry.kind === "map" && typeof entry.extra?.map_type === "string" && entry.extra.map_type.trim() ? entry.extra.map_type.trim() : null,
       note: noteSummary(entry.id, entry.contentHash),
 
     };
@@ -169,6 +172,21 @@ export function getKnowledgeOverview(options: { kind?: string; query?: string } 
   };
 }
 
+// 一个方向写了 related 就当作双向关系：map 的作用是把已有条目串起来，
+// 不让用户在每条相关知识里各写一遍。第一版仍然只使用 front matter 的 related 字段。
+function relatedEntries(entry: KnowledgeEntryRecord): KnowledgeEntryRecord[] {
+  const all = listKnowledgeEntries({});
+  const byId = new Map(all.map((item) => [item.id, item]));
+  const ids: string[] = [];
+  const push = (id: string) => {
+    if (id === entry.id || !byId.has(id) || ids.includes(id)) return;
+    ids.push(id);
+  };
+  for (const id of entry.related) push(id);
+  for (const item of all) if (item.related.includes(entry.id)) push(item.id);
+  return ids.map((id) => byId.get(id) as KnowledgeEntryRecord);
+}
+
 export function getKnowledgeDetail(id: string, options: { kind?: string; query?: string } = {}): KnowledgeDetail | null {
   const entry = getKnowledgeEntry(id);
   if (!entry || !entry.visible) return null;
@@ -182,10 +200,7 @@ export function getKnowledgeDetail(id: string, options: { kind?: string; query?:
     ...listItem,
     body: entry.body,
     sources: entry.sources.map((source) => ({ label: sourceLabel(source), url: knowledgeSourceUrl(source, repository, branch) })),
-    related: entry.related
-      .map((relatedId) => getKnowledgeEntry(relatedId))
-      .filter((item): item is KnowledgeEntryRecord => item !== null && item.visible)
-      .map((item) => ({ id: item.id, title: item.title, kind: item.kind, status: item.status })),
+    related: relatedEntries(entry).map((item) => ({ id: item.id, title: item.title, kind: item.kind, status: item.status })),
     noteContent: note?.content ?? null,
     stale,
     promptVersion: PROMPT_VERSION,

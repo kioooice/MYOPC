@@ -227,7 +227,7 @@ export function listKnowledgeEntries(options: { kind?: string; query?: string } 
   const params: Array<string> = [];
   if (options.kind) { clauses.push("kind=?"); params.push(options.kind); }
   if (options.query) { clauses.push("(title LIKE ? OR summary LIKE ? OR body LIKE ?)"); const like = `%${options.query}%`; params.push(like, like, like); }
-  const rows = getDb().prepare(`SELECT * FROM knowledge_entries WHERE ${clauses.join(" AND ")} ORDER BY CASE kind WHEN 'project' THEN 0 WHEN 'tool' THEN 1 ELSE 2 END, title`).all(...params) as EntryRow[];
+  const rows = getDb().prepare(`SELECT * FROM knowledge_entries WHERE ${clauses.join(" AND ")} ORDER BY CASE kind WHEN 'project' THEN 0 WHEN 'tool' THEN 1 WHEN 'note' THEN 2 ELSE 3 END, title`).all(...params) as EntryRow[];
   return rows.map(toEntry);
 }
 
@@ -284,7 +284,7 @@ export function listEntriesNeedingNote(promptVersion: string, limit: number) {
   const rows = getDb().prepare(`SELECT e.* FROM knowledge_entries e
     LEFT JOIN knowledge_reading_notes n ON n.entry_id = e.id
     WHERE e.visible=1 AND (n.entry_id IS NULL OR n.source_hash <> e.content_hash OR n.prompt_version <> ? OR n.content_json IS NULL OR n.status = 'failed')
-    ORDER BY CASE e.kind WHEN 'project' THEN 0 WHEN 'tool' THEN 1 ELSE 2 END, e.title
+    ORDER BY CASE e.kind WHEN 'project' THEN 0 WHEN 'tool' THEN 1 WHEN 'note' THEN 2 ELSE 3 END, e.title
     LIMIT ?`).all(promptVersion, limit) as EntryRow[];
   return rows.map(toEntry);
 }

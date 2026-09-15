@@ -1,8 +1,9 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FileText, Folder, Inbox, Menu, PanelLeftClose, PanelLeftOpen, RefreshCw, Rocket, Search, Sparkles, X } from "lucide-react";
+import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FileText, Folder, Inbox, Menu, Network, PanelLeftClose, PanelLeftOpen, RefreshCw, Rocket, Search, Sparkles, X } from "lucide-react";
 import { assertPendingWriteCanSend, clearPendingWrite, loadPendingWrite, storePendingWrite, type PendingWrite } from "@/lib/pending-write";
+import { MermaidDiagram } from "./mermaid-diagram";
 
 type Feedback = { id: string; content: string; status: string; source?: string; kind?: string; handled_at?: string | null };
 type Version = { id: string; ordinal: number; content: string; created_at?: string; review_status?: string; feedback: Feedback[]; handles_feedback_ids: string[] };
@@ -10,13 +11,13 @@ type Deliverable = { id: string; title: string; type: string; accepted_version_i
 type Decision = { id: string; rationale: string; adjustment: string; next_step: string; execution_status: string };
 type Trial = { id: string; title: string; goal: string; status: string; revision: number; project_id?: string | null; project?: { id: string; name: string; category: string } | null; code_repository?: string | null; code_branch?: string | null; code_commit?: string | null; next_step?: string | null; method: null | { title: string; revision_label: string; purpose: string; steps: string[] }; capture: null | { title: string; kind: string; source?: string }; captures?: Array<{ id: string; title: string; kind: string }>; deliverables: Deliverable[]; decisions: Decision[] };
 type KnowledgeNote = { status: "ready" | "stale" | "failed" | "missing"; stale: boolean; model: string | null; generatedAt: string | null; error: string | null; summary: string | null; brief: string | null; card: string | null };
-type KnowledgeItem = { id: string; kind: string; title: string; summary: string; status: string; tags: string[]; updatedAt: string | null; link: string | null; relPath: string; sourceUrls: string[]; category: string | null; note: KnowledgeNote };
+type KnowledgeItem = { id: string; kind: string; title: string; summary: string; status: string; tags: string[]; updatedAt: string | null; link: string | null; relPath: string; sourceUrls: string[]; category: string | null; mapType: string | null; note: KnowledgeNote };
 type KnowledgeNoteContent = { summary: string; facts: string[]; decisions: Array<{ title: string; detail: string }>; steps: string[]; conditions: string[]; open_questions: string[]; inferences: string[] };
 type KnowledgeDetail = KnowledgeItem & { body: string; sources: Array<{ label: string; url: string | null }>; related: Array<{ id: string; title: string; kind: string; status: string }>; noteContent: KnowledgeNoteContent | null; stale: boolean; promptVersion: string };
 type KnowledgeSync = { status: "ok" | "failed" | "never"; commit: string | null; branch: string | null; message: string | null; entryCount: number; addedCount: number; updatedCount: number; removedCount: number; startedAt: string | null; finishedAt: string | null };
 type KnowledgeOverviewResponse = { sync: KnowledgeSync; model: { configured: boolean; model: string | null; baseUrl: string | null }; promptVersion: string; repository: string; directory: string; pendingNotes: number; entries: KnowledgeItem[] };
 type WriteRequest = PendingWrite;
-type View = "overview" | "projects" | "toolbox" | "space" | "entry" | "active" | "inbox" | "deliverables";
+type View = "overview" | "projects" | "toolbox" | "space" | "maps" | "entry" | "active" | "inbox" | "deliverables";
 
 const statusLabel = (status: string) => ({ in_progress: "进行中", review: "审阅中", done: "已完成", paused: "已暂停" }[status] || status);
 const kindLabel = (kind?: string) => kind === "failure" ? "从失败开始" : kind === "discovery" ? "从资料开始" : "从需求开始";
@@ -24,6 +25,13 @@ const feedbackKindLabel = (kind?: string) => kind === "review" ? "待审阅" : "
 const sourceLabel = (source?: string) => source === "user" ? "用户反馈" : source === "codex" ? "Codex 记录" : source === "system" ? "系统记录" : "反馈";
 const reviewStatusLabel = (status?: string) => status === "accepted" ? "已采用" : status === "needs_revision" ? "需要修改" : "待审阅";
 const noteStatusLabel = (status: string, stale = false) => status === "ready" ? "已有阅读说明" : status === "failed" ? "加工失败" : status === "stale" || stale ? "待更新" : "待生成";
+const mapTypeLabel = (mapType?: string | null) => mapType === "architecture" ? "架构图" : mapType === "workflow" ? "流程图" : mapType === "decision" ? "判断树" : mapType === "relationship" ? "关系图" : "图谱";
+const RELATED_KIND_META: Record<string, { title: string; badge: string }> = {
+  project: { title: "相关项目", badge: "项目" },
+  tool: { title: "相关工具", badge: "工具" },
+  note: { title: "相关方法", badge: "笔记" },
+  map: { title: "相关图谱", badge: "图谱" },
+};
 const shortTime = (value?: string | null) => value ? new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
 
 export default function Home() {
@@ -107,6 +115,7 @@ export default function Home() {
   const knowledgeProjects = useMemo(() => knowledge.filter((item) => item.kind === "project"), [knowledge]);
   const knowledgeTools = useMemo(() => knowledge.filter((item) => item.kind === "tool"), [knowledge]);
   const knowledgeNotes = useMemo(() => knowledge.filter((item) => item.kind === "note"), [knowledge]);
+  const knowledgeMaps = useMemo(() => knowledge.filter((item) => item.kind === "map"), [knowledge]);
   const knowledgeTooltip = [knowledgeSync?.commit ? `知识仓库 ${knowledgeSync.commit.slice(0, 8)}` : "知识仓库未同步", knowledgeSync?.finishedAt ? new Date(knowledgeSync.finishedAt).toLocaleString("zh-CN") : "", knowledgeModel?.configured ? `模型 ${knowledgeModel.model}` : "模型未配置", pendingNotes > 0 ? `${pendingNotes} 条待加工` : "阅读说明已就绪"].filter(Boolean).join(" · ");
   const activeTrials = useMemo(() => trials.filter((item) => item.status === "in_progress" || item.status === "review"), [trials]);
   const openFeedbackCount = useMemo(() => trials.flatMap((item) => item.deliverables).flatMap((item) => item.versions).flatMap((item) => item.feedback).filter((item) => item.status === "open").length, [trials]);
@@ -120,7 +129,7 @@ export default function Home() {
   function goTo(nextView: View) { setSelected(""); setEntry(null); setView(nextView); }
 
   async function openEntry(id: string, kind?: string) {
-    const section: View = kind === "tool" ? "toolbox" : kind === "note" ? "space" : "projects";
+    const section: View = kind === "tool" ? "toolbox" : kind === "note" ? "space" : kind === "map" ? "maps" : "projects";
     setSelected(""); setView("entry"); setEntryLoading(true); setError("");
     try {
       const response = await fetch(`/api/v1/knowledge/entries/${encodeURIComponent(id)}`, { cache: "no-store" });
@@ -249,6 +258,7 @@ export default function Home() {
         <button className={view === "projects" || (view === "entry" && lastEntrySection === "projects") ? "nav-item active" : "nav-item"} onClick={() => goTo("projects")}><Folder size={17} /><span>项目</span>{knowledgeProjects.length > 0 && <b>{knowledgeProjects.length}</b>}</button>
         <button className={view === "toolbox" || (view === "entry" && lastEntrySection === "toolbox") ? "nav-item active" : "nav-item"} onClick={() => goTo("toolbox")}><Rocket size={17} /><span>工具</span>{knowledgeTools.length > 0 && <b>{knowledgeTools.length}</b>}</button>
         <button className={view === "space" || (view === "entry" && lastEntrySection === "space") ? "nav-item active" : "nav-item"} onClick={() => goTo("space")}><BookOpen size={17} /><span>空间</span>{knowledgeNotes.length > 0 && <b>{knowledgeNotes.length}</b>}</button>
+        <button className={view === "maps" || (view === "entry" && lastEntrySection === "maps") ? "nav-item active" : "nav-item"} onClick={() => goTo("maps")}><Network size={17} /><span>图谱</span>{knowledgeMaps.length > 0 && <b>{knowledgeMaps.length}</b>}</button>
       </nav>
     </aside>
 
@@ -263,12 +273,15 @@ export default function Home() {
         {error && <div className="error-banner"><CircleAlert size={16} /><span>{error}</span>{!pendingWrite && <button className="retry-button" onClick={() => void load()}>重新连接</button>}<button onClick={() => setError("")} aria-label="关闭提示"><X size={16} /></button></div>}
         {loading && <div className="loading-state">正在读取共享工作状态…</div>}
         {notice && <div className="notice-banner"><CheckCircle2 size={15} /><span>{notice}</span><button onClick={() => setNotice("")} aria-label="关闭提示"><X size={15} /></button></div>}
-        {!loading && view === "overview" && !trial && <OverviewView projects={knowledgeProjects} tools={knowledgeTools} notes={knowledgeNotes} onOpen={openEntry} onNavigate={goTo} />}
+        {!loading && view === "overview" && !trial && <OverviewView projects={knowledgeProjects} tools={knowledgeTools} notes={knowledgeNotes} maps={knowledgeMaps} onOpen={openEntry} onNavigate={goTo} />}
         {view === "entry" && entryLoading && <div className="loading-state">正在读取条目…</div>}
-        {view === "entry" && !entryLoading && entry && <KnowledgeDetailView entry={entry} busy={knowledgeBusy} model={knowledgeModel} onBack={() => goTo(lastEntrySection)} onGenerate={(id, force) => void generateNote(id, force)} />}
+        {view === "entry" && !entryLoading && entry && (entry.kind === "map"
+          ? <MapDetailView entry={entry} busy={knowledgeBusy} model={knowledgeModel} onBack={() => goTo(lastEntrySection)} onOpen={(id, kind) => void openEntry(id, kind)} onGenerate={(id, force) => void generateNote(id, force)} />
+          : <KnowledgeDetailView entry={entry} busy={knowledgeBusy} model={knowledgeModel} onBack={() => goTo(lastEntrySection)} onOpen={(id, kind) => void openEntry(id, kind)} onGenerate={(id, force) => void generateNote(id, force)} />)}
         {!loading && !trial && view === "projects" && <KnowledgeListView kind="project" items={knowledgeProjects} onOpen={openEntry} />}
         {!loading && !trial && view === "toolbox" && <KnowledgeListView kind="tool" items={knowledgeTools} onOpen={openEntry} />}
         {!loading && !trial && view === "space" && <KnowledgeListView kind="note" items={knowledgeNotes} onOpen={openEntry} />}
+        {!loading && !trial && view === "maps" && <KnowledgeListView kind="map" items={knowledgeMaps} onOpen={openEntry} />}
         {!loading && !trial && view === "active" && <ListView title="进行中的行动" subtitle="从这里继续目标、产物和反馈；审阅中的行动也保留在这里。" trials={activeTrials} onOpen={openTrial} empty="还没有进行中的行动" />}
         {!loading && !trial && view === "inbox" && <InboxView trials={trials} onOpen={openTrial} />}
         {!loading && !trial && view === "deliverables" && <DeliverablesView trials={trials} onOpen={openTrial} />}
@@ -360,13 +373,15 @@ function sortProjectsByStatus(items: KnowledgeItem[]) {
   });
 }
 
-function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" | "note"; items: KnowledgeItem[]; onOpen: (id: string, kind: string) => void }) {
+function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" | "note" | "map"; items: KnowledgeItem[]; onOpen: (id: string, kind: string) => void }) {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const meta = kind === "project"
     ? { eyebrow: "Projects", title: "项目", subtitle: "来自知识仓库的项目概况；进行中的排前面，已暂停的排在最后。" }
     : kind === "tool"
       ? { eyebrow: "Toolbox", title: "工具", subtitle: "真正可调用的工具与入口，说明和维护都在知识仓库里。" }
-      : { eyebrow: "Space", title: "空间", subtitle: "经过实践留下的方法、经验与判断。" };
+      : kind === "note"
+        ? { eyebrow: "Space", title: "空间", subtitle: "经过实践留下的方法、经验与判断。" }
+        : { eyebrow: "Maps", title: "图谱", subtitle: "架构、流程、判断与关系的可视化理解。" };
   const allGroups = kind === "note" ? groupNotesByCategory(items) : [];
   const groups = kind === "note"
     ? (categoryFilter ? allGroups.filter((group) => group.label === categoryFilter) : allGroups)
@@ -378,8 +393,26 @@ function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" |
     const isRepo = /github\.com/i.test(item.link);
     return { href: item.link, label: item.kind === "tool" && !isRepo ? "打开工具" : isRepo ? "查看源码" : "打开入口" };
   };
-  const openLabel = (kind: string) => kind === "project" ? "查看项目" : kind === "tool" ? "查看说明" : "阅读笔记";
+  const openLabel = (kind: string) => kind === "project" ? "查看项目" : kind === "tool" ? "查看说明" : kind === "map" ? "打开图谱" : "阅读笔记";
   const renderCard = (item: KnowledgeItem) => {
+    if (kind === "map") {
+      const link = sourceLink(item);
+      const noteHint = item.note.status === "ready" ? null : noteStatusLabel(item.note.status, item.note.stale);
+      const oneLine = item.note.brief || item.summary || "暂无摘要";
+      const structure = item.note.card || item.note.summary || "";
+      return <article className="asset-card knowledge-card map-card" key={item.id}>
+        <div className="asset-card-head"><span>{mapTypeLabel(item.mapType)}</span>{noteHint && <b>{noteHint}</b>}</div>
+        <h2>{item.title}</h2>
+        <p className="map-card-brief">{oneLine}</p>
+        {structure && structure !== oneLine && <p className="map-card-structure">{structure}</p>}
+        {item.tags.length > 0 && <div className="tag-row">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
+        <div className="asset-card-foot">{item.updatedAt ? "更新 " + item.updatedAt : "未标注更新时间"}</div>
+        <div className="knowledge-actions">
+          <button className="primary-button" onClick={() => onOpen(item.id, item.kind)}>打开图谱</button>
+          {link && <a href={link.href} target="_blank" rel="noreferrer">{link.label} <ExternalLink size={12} /></a>}
+        </div>
+      </article>;
+    }
     const link = sourceLink(item);
     const noteHint = item.note.status === "ready" ? null : noteStatusLabel(item.note.status, item.note.stale);
     const usingSourceSummary = !item.note.card && !item.note.summary && Boolean(item.summary);
@@ -412,12 +445,12 @@ function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" |
   </div>;
 }
 
-function KnowledgeDetailView({ entry, busy, model, onBack, onGenerate }: { entry: KnowledgeDetail; busy: boolean; model: KnowledgeOverviewResponse["model"] | null; onBack: () => void; onGenerate: (id: string, force: boolean) => void }) {
+function KnowledgeDetailView({ entry, busy, model, onBack, onOpen, onGenerate }: { entry: KnowledgeDetail; busy: boolean; model: KnowledgeOverviewResponse["model"] | null; onBack: () => void; onOpen: (id: string, kind: string) => void; onGenerate: (id: string, force: boolean) => void }) {
   const note = entry.noteContent;
   return <div className="knowledge-detail">
     <div className="view-title">
       <button className="text-button back-button" onClick={onBack}><ChevronLeft size={14} /> 返回列表</button>
-      <span className="eyebrow">{entry.kind === "project" ? "Project" : entry.kind === "tool" ? "Tool" : "Note"}</span>
+      <span className="eyebrow">{entry.kind === "project" ? "Project" : entry.kind === "tool" ? "Tool" : entry.kind === "map" ? "Map" : "Note"}</span>
       <h1>{entry.title}</h1>
       <p>{entry.summary}</p>
       <div className="detail-meta">
@@ -446,23 +479,160 @@ function KnowledgeDetailView({ entry, busy, model, onBack, onGenerate }: { entry
         {note.inferences.length > 0 && <><h3>模型推断（非原文事实）</h3><ul className="inference-list">{note.inferences.map((item, index) => <li key={`inference-${index}`}>{item}</li>)}</ul></>}
       </>}
     </section>
+    {entry.related.length > 0 && <section className="knowledge-section">
+      <h2>相关知识</h2>
+      <RelatedKnowledge items={entry.related} onOpen={onOpen} />
+    </section>}
     <details className="knowledge-details">
       <summary>原文（{entry.relPath}）</summary>
       <div className="markdown-body">{renderMarkdown(entry.body)}</div>
     </details>
     <details className="knowledge-details">
-      <summary>来源与相关知识</summary>
+      <summary>来源</summary>
       {entry.sources.length === 0 ? <p className="muted-text">条目没有标注来源。</p> : <ul className="source-list">{entry.sources.map((source) => <li key={source.label}>{source.url ? <a href={source.url} target="_blank" rel="noreferrer">{source.label} <ExternalLink size={11} /></a> : source.label}</li>)}</ul>}
-      {entry.related.length > 0 && <><h3>相关知识</h3><ul className="source-list">{entry.related.map((item) => <li key={item.id}>{item.title}（{item.kind === "project" ? "项目" : item.kind === "tool" ? "工具" : "笔记"}）</li>)}</ul></>}
     </details>
   </div>;
 }
 
-function OverviewView({ projects, tools, notes, onOpen, onNavigate }: { projects: KnowledgeItem[]; tools: KnowledgeItem[]; notes: KnowledgeItem[]; onOpen: (id: string, kind: string) => void; onNavigate: (view: View) => void }) {
-  const columns: Array<{ view: "projects" | "toolbox" | "space"; label: string; items: KnowledgeItem[] }> = [
+type MapSection = { title: string; body: string };
+
+function extractMermaidBlocks(body: string) {
+  const blocks: string[] = [];
+  const pattern = /```mermaid[^\n]*\n([\s\S]*?)```/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(body)) !== null) if (match[1].trim()) blocks.push(match[1].trim());
+  return blocks;
+}
+
+function mapSections(body: string): MapSection[] {
+  const sections: MapSection[] = [];
+  let current: { title: string; lines: string[] } | null = null;
+  for (const line of body.replace(/\r\n/g, "\n").split("\n")) {
+    const heading = /^##\s+(.+?)\s*$/.exec(line);
+    if (heading) {
+      if (current) sections.push({ title: current.title, body: current.lines.join("\n").trim() });
+      current = { title: heading[1], lines: [] };
+      continue;
+    }
+    if (current) current.lines.push(line);
+  }
+  if (current) sections.push({ title: current.title, body: current.lines.join("\n").trim() });
+  return sections;
+}
+
+// 主图已经在页面顶部渲染，正文里同一份 Mermaid 不再重复出现；
+// 只有这一张图的章节也一并跳过，避免留下空标题。
+function sectionKeepsContent(section: MapSection, mainDiagram: string) {
+  const withoutMain = section.body.replace(/```mermaid[^\n]*\n([\s\S]*?)```/g, (block, code: string) => code.trim() === mainDiagram ? "" : block);
+  return withoutMain.trim().length > 0;
+}
+
+function renderMapBody(text: string, skipDiagram: string) {
+  const nodes: ReactNode[] = [];
+  const parts = text.split(/```mermaid[^\n]*\n([\s\S]*?)```/g);
+  parts.forEach((part, index) => {
+    if (index % 2 === 1) {
+      const code = part.trim();
+      if (!code || code === skipDiagram) return;
+      nodes.push(<MermaidDiagram key={`map-diagram-${index}`} code={code} label="结构图" />);
+      return;
+    }
+    const content = part.trim();
+    if (!content) return;
+    nodes.push(<div className="markdown-body" key={`map-text-${index}`}>{renderMarkdown(content)}</div>);
+  });
+  return nodes;
+}
+
+function RelatedKnowledge({ items, onOpen }: { items: KnowledgeDetail["related"]; onOpen: (id: string, kind: string) => void }) {
+  if (items.length === 0) return <p className="muted-text">没有标注相关知识。</p>;
+  const order = ["project", "tool", "note", "map"];
+  const kinds = [...new Set(items.map((item) => item.kind))].sort((left, right) => {
+    const leftIndex = order.indexOf(left);
+    const rightIndex = order.indexOf(right);
+    return (leftIndex === -1 ? order.length : leftIndex) - (rightIndex === -1 ? order.length : rightIndex);
+  });
+  return <div className="related-groups">
+    {kinds.map((kind) => {
+      const meta = RELATED_KIND_META[kind] || { title: "其他相关知识", badge: kind };
+      return <div className="related-group" key={kind}>
+        <h4>{meta.title}</h4>
+        <div className="related-links">
+          {items.filter((item) => item.kind === kind).map((item) => <button type="button" className="related-link" key={item.id} onClick={() => onOpen(item.id, item.kind)}>
+            <span className="related-kind">{meta.badge}</span>
+            <span className="related-title">{item.title}</span>
+            <ChevronRight size={13} />
+          </button>)}
+        </div>
+      </div>;
+    })}
+  </div>;
+}
+
+function MapDetailView({ entry, busy, model, onBack, onOpen, onGenerate }: { entry: KnowledgeDetail; busy: boolean; model: KnowledgeOverviewResponse["model"] | null; onBack: () => void; onOpen: (id: string, kind: string) => void; onGenerate: (id: string, force: boolean) => void }) {
+  const note = entry.noteContent;
+  // 知识仓库在 Windows 检出时是 CRLF；统一换行后再比较，主图不会在正文里重复渲染。
+  const body = entry.body.replace(/\r\n/g, "\n");
+  const diagrams = extractMermaidBlocks(body);
+  const mainDiagram = diagrams[0] || "";
+  const sections = mapSections(body).filter((section) => sectionKeepsContent(section, mainDiagram));
+  return <div className="knowledge-detail map-detail">
+    <div className="view-title">
+      <button className="text-button back-button" onClick={onBack}><ChevronLeft size={14} /> 返回图谱</button>
+      <span className="eyebrow">Map · {mapTypeLabel(entry.mapType)}</span>
+      <h1>{entry.title}</h1>
+      <p className="map-one-line">{entry.note.brief || entry.summary}</p>
+      <div className="detail-meta">
+        <span>{entry.status || "未标注状态"}</span>
+        <span>条目更新 {entry.updatedAt || "未标注"}</span>
+        <span>{entry.noteContent ? `${entry.stale || entry.note.status === "stale" ? "上一次的阅读说明" : "阅读说明"}：${entry.note.model || "模型"}${entry.note.generatedAt ? ` · ${new Date(entry.note.generatedAt).toLocaleString("zh-CN")}` : ""}` : entry.note.status === "failed" ? "加工失败，暂无可用说明" : "尚未生成阅读说明"}</span>
+      </div>
+      <div className="detail-actions">
+        <button className="primary-button" onClick={() => onGenerate(entry.id, false)} disabled={busy || !model?.configured} title={model?.configured ? undefined : "未配置模型密钥"}>{busy ? "处理中…" : "生成阅读说明"}</button>
+        <button onClick={() => onGenerate(entry.id, true)} disabled={busy || !model?.configured}>重新生成</button>
+      </div>
+      {(entry.note.error || entry.stale || entry.note.status === "stale") && <div className="inline-warning"><CircleAlert size={15} /><span>{entry.note.status === "failed"
+        ? `上次加工失败：${entry.note.error || "未知原因"}。${entry.noteContent ? "下面是上一次可用的说明。" : ""}`
+        : entry.noteContent ? "原文或规程已更新，下面是上一次的说明，等待重新加工。" : "原文或规程已更新，说明待重新加工。"}</span></div>}
+    </div>
+    {mainDiagram
+      ? <section className="map-main"><MermaidDiagram code={mainDiagram} label="主图" /></section>
+      : <div className="inline-warning"><CircleAlert size={15} /><span>原文中没有找到 Mermaid 结构图，下面显示已整理的正文。</span></div>}
+    {sections.map((section) => <section className="knowledge-section map-section" key={section.title}>
+      <h2>{section.title}</h2>
+      {renderMapBody(section.body, mainDiagram)}
+    </section>)}
+    <section className="knowledge-section map-reading">
+      <h2>模型辅助阅读</h2>
+      {!note ? <p className="muted-text">还没有可用的阅读说明。上方按钮可按当前来源生成；失败时会保留上一次可用结果。</p> : <>
+        <p className="note-summary">{note.summary}</p>
+        {note.facts.length > 0 && <><h3>图中与正文明确写出的内容</h3><ul>{note.facts.map((item, index) => <li key={`map-fact-${index}`}>{item}</li>)}</ul></>}
+        {note.decisions.length > 0 && <><h3>结构选择与边界</h3><dl className="decision-list">{note.decisions.map((item, index) => <div key={`map-decision-${index}`}><dt>{item.title}</dt><dd>{item.detail}</dd></div>)}</dl></>}
+        {note.conditions.length > 0 && <><h3>适用条件 / 边界</h3><ul>{note.conditions.map((item, index) => <li key={`map-condition-${index}`}>{item}</li>)}</ul></>}
+        {note.open_questions.length > 0 && <><h3>仍未确定</h3><ul>{note.open_questions.map((item, index) => <li key={`map-open-${index}`}>{item}</li>)}</ul></>}
+        {note.inferences.length > 0 && <><h3>模型推断（非图中事实）</h3><ul className="inference-list">{note.inferences.map((item, index) => <li key={`map-inference-${index}`}>{item}</li>)}</ul></>}
+      </>}
+      <p className="map-note-hint">模型只解释原图，不修改 Mermaid 源码和图结构。</p>
+    </section>
+    <section className="knowledge-section map-related">
+      <h2>相关知识</h2>
+      <RelatedKnowledge items={entry.related} onOpen={onOpen} />
+      <h3 className="map-source-title">来源</h3>
+      {entry.sources.length === 0 ? <p className="muted-text">条目没有标注来源。</p> : <ul className="source-list">{entry.sources.map((source, index) => <li key={`map-source-${index}`}>{source.url ? <a href={source.url} target="_blank" rel="noreferrer">{source.label} <ExternalLink size={11} /></a> : source.label}</li>)}</ul>}
+    </section>
+    <details className="knowledge-details">
+      <summary>原文（{entry.relPath}）</summary>
+      <div className="markdown-body">{renderMarkdown(entry.body)}</div>
+    </details>
+  </div>;
+}
+
+function OverviewView({ projects, tools, notes, maps, onOpen, onNavigate }: { projects: KnowledgeItem[]; tools: KnowledgeItem[]; notes: KnowledgeItem[]; maps: KnowledgeItem[]; onOpen: (id: string, kind: string) => void; onNavigate: (view: View) => void }) {
+  const columns: Array<{ view: "projects" | "toolbox" | "space" | "maps"; label: string; items: KnowledgeItem[] }> = [
     { view: "projects", label: "项目", items: projects },
     { view: "toolbox", label: "可调用工具", items: tools },
     { view: "space", label: "知识与方法", items: notes },
+    { view: "maps", label: "图谱", items: maps },
   ];
   return <div className="overview-view">
     <div className="overview-board">

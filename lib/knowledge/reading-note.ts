@@ -2,7 +2,7 @@ import { KnowledgeError } from "./repo";
 import { countEntriesNeedingNote, getKnowledgeEntry, getReadingNote, listEntriesNeedingNote, saveReadingNoteFailure, saveReadingNoteSuccess, type KnowledgeEntryRecord, type ReadingNoteContent, type ReadingNoteRecord } from "./store";
 import { callChatModel, getModelConfig } from "./model";
 
-export const PROMPT_VERSION = "reading-note-v5";
+export const PROMPT_VERSION = "reading-note-v6";
 const MAX_BODY_CHARS = 12000;
 
 const SYSTEM_PROMPT = [
@@ -42,7 +42,10 @@ function buildUserPrompt(entry: KnowledgeEntryRecord, related: Array<{ title: st
     ? "项目：brief 说明项目用途或当前重要阶段；card 先说解决什么问题，再说目前做到哪里或最关键的限制。历史测试与部署数字不当当前进展。材料未提供下一步时不要编造。"
     : entry.kind === "tool"
       ? "工具：brief 说明能帮用户做什么；card 说明什么场景会用它、能完成什么，以及材料明确的重要使用限制。不要用部署地址或框架版本代替用途，不把源码链接当可用服务入口。"
-      : "笔记：brief 直接表达值得记住的观点；card 说明做法或选择及适用场景。方法说怎么做，经验保留发生过什么与认识，判断保留选择理由和条件；不要都写成普遍定律。";
+      : entry.kind === "map"
+        ? "图谱：brief 说明这张图帮助理解什么；card 说明核心结构以及最重要的关系或分界。facts 只提取图和正文明确存在的组成部分，decisions 只写图中明确表达的结构选择或边界，conditions 写适用条件或理解边界，inferences 写可以迁移到其他场景的理解并明确属于推断，steps 留空。"
+        : "笔记：brief 直接表达值得记住的观点；card 说明做法或选择及适用场景。方法说怎么做，经验保留发生过什么与认识，判断保留选择理由和条件；不要都写成普遍定律。";
+  const mapType = typeof entry.extra?.map_type === "string" ? entry.extra.map_type.trim() : "";
   const sourceLines = entry.sources.map((source) => {
     const parts = [source.repo, source.path].filter(Boolean).join(" / ");
     return `- ${parts || "未标注仓库路径"}${source.url ? `；来源链接：${source.url}` : ""}${source.note ? `（${source.note}）` : ""}`;
@@ -52,6 +55,8 @@ function buildUserPrompt(entry: KnowledgeEntryRecord, related: Array<{ title: st
     `条目标题：${entry.title}`,
     `条目类型：${entry.kind}`,
     `本类写作目标：${writingGoal}`,
+    entry.kind === "map" ? `图谱类型：${mapType || "未标注"}` : "",
+    entry.kind === "map" ? "图谱约束：不得修改 Mermaid 源码，不得重新设计图结构，不得新增原图中不存在的节点，不得删除原图关键节点，不得把模型推断写成图中事实，不得因为图看起来合理就扩写原文没有的机制。Mermaid 源码是原图事实，阅读说明只做解释和辅助阅读。这些约束是加工要求，不是原文内容，不要写进 summary、brief、card、facts、decisions、conditions 或 inferences。" : "",
     entry.status ? `条目状态：${entry.status}` : "",
     entry.summary ? `条目摘要：${entry.summary}` : "",
     entry.updatedAt ? `条目更新时间：${entry.updatedAt}` : "",

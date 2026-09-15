@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join, relative, sep } from "node:path";
 import { splitFrontMatter, type YamlValue } from "./yaml";
 
-export const KNOWLEDGE_KINDS = ["project", "tool", "note"] as const;
+export const KNOWLEDGE_KINDS = ["project", "tool", "note", "map"] as const;
 export type KnowledgeKind = (typeof KNOWLEDGE_KINDS)[number];
 
 export type KnowledgeSourceRef = { repo?: string; path?: string; url?: string; note?: string };
@@ -42,7 +42,7 @@ export class KnowledgeError extends Error {
   }
 }
 
-const KIND_DIRECTORY: Record<KnowledgeKind, string> = { project: "projects", tool: "tools", note: "notes" };
+const KIND_DIRECTORY: Record<KnowledgeKind, string> = { project: "projects", tool: "tools", note: "notes", map: "maps" };
 const RESERVED_FIELDS = new Set(["id", "kind", "title", "summary", "status", "tags", "related", "link", "updated", "sources"]);
 
 export function getKnowledgeDirectory() {
