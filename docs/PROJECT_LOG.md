@@ -26,10 +26,11 @@
 - `npm test` 61 项通过（新增 14 项覆盖 context Gate、相关性过滤、重复调用缓存、截断重试、结果回流与候选经验、Bridge 参数与仓库解析）；lint、`tsc --noEmit`、`next build` 通过。
 - 真实仓库场景（本地 OPC + 真实模型）：flow-skill 的「录音实时降噪」返回 `no_relevant_knowledge`；skill-runtime 的「执行期只记候选、任务后批量整理」返回 3 条知识与理由，`opc result` 生成 `task-20260915-001`、3 条「有效」判定与 1 条候选经验。
 - vibe / flow-skill / helm 三个业务仓库 `git status` 没有新增 OPC 文件；Bridge 日志与空间页观察数据一致（7 次调用 / 4 次命中 / 1 条结果 / 1 条候选）。
+- 部署到服务器 `124.222.190.89`：检出快进到 `7e50f89`、`MYOPC_RELEASE` 同步更新，部署前备份 `pre-reuse-7e50f89.sqlite`（完整性 ok、无外键违规），容器重建后 `restarts=0`；migration 12 自动生效，`POST /api/v1/agent/context` 用真实模型返回 1 条相关知识，`GET /api/v1/knowledge/reuse` 返回 1 次调用 / 1 次命中。
 
 **未解决 / 未验证**
 
-- Bridge 默认指向本机实例；指向部署实例需要在 `%LOCALAPPDATA%\OPC\config.json` 填 Basic Auth，服务器尚未部署本改造。
+- Bridge 仍指向本机实例；要用部署实例需要在 `%LOCALAPPDATA%\OPC\config.json` 填 `serverUrl` 与 Basic Auth。
 - 候选经验还没有整理进知识仓库的流程；相关性阈值只在小样本上验证过。
 - Codex 自动调用对方案质量的实际影响尚未独立评估，目前验证的是命令链路、Gate 与不阻塞行为。
 

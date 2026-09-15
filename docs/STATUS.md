@@ -23,9 +23,15 @@
 - `git status`：vibe / flow-skill / helm 没有出现任何 OPC 文件（vibe 中两个未跟踪文件是 9-11 与 5-8 的既有文件）。
 - 页面实测：空间页显示 7 次调用 / 4 次命中 / 1 条结果 / 1 条候选，三个观察列表内容与 Bridge 日志一致。
 
+### 服务器部署（2026-09-15）
+
+- `/opt/apps/opc` 快进到 `7e50f89`，`.env` 的 `MYOPC_RELEASE=7e50f89`；部署前备份 `/opt/backups/opc/pre-reuse-7e50f89.sqlite`（完整性 ok、无外键违规），容器重建后 `restarts=0`。
+- migration 12 已在服务器数据库生效（`schema_migrations` 到 12，新增 `agent_task_results`、`knowledge_candidates`）。
+- 接口实测：`POST /api/v1/agent/context`（任务「[部署验证] 确认开发知识复用接口可用」）由真实模型返回 1 条相关知识（`safe-deploy`，含理由与正文）；`GET /api/v1/knowledge/reuse` 显示 1 次调用、1 次命中；`/api/v1/health` 返回 `release=7e50f89`；同步定时器保持 active。
+
 ### 未解决 / 未验证
 
-- Bridge 默认指向本机 `http://127.0.0.1:3000`；指向部署实例需要在 `%LOCALAPPDATA%\OPC\config.json` 填 Basic Auth。
+- Bridge 仍指向本机 `http://127.0.0.1:3000`；要用部署实例需要在 `%LOCALAPPDATA%\OPC\config.json` 填 `serverUrl` 与 Basic Auth。
 - 候选经验只在 OPC 中排队，还没有整理进知识仓库的流程。
 - 相关性阈值（70）与「通用判断不算相关」的抑制效果只在小样本上观察过；notes 变多后需要重新评估检索方式。
 - 目前只有 notes 参与复用，项目 / 工具 / 图谱暂不参与。
