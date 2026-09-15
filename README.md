@@ -48,8 +48,26 @@ npm run dev -- --hostname 127.0.0.1
 | POST | /knowledge/sync | 重新读取知识目录并更新索引 |
 | POST | /knowledge/notes | 为单个条目生成或重新生成阅读说明（`entry_id`、可选 `force`） |
 | POST | /knowledge/process | 批量加工待处理条目（可选 `limit`，一次最多 10 条） |
+| POST | /agent/context | 开发知识复用：按任务取 0~3 条历史知识（`repository`、`task`、可选 `force`） |
+| POST | /agent/result | 开发知识复用：回流任务结果，必要时形成候选经验 |
+| GET | /knowledge/reuse | 知识复用观察数据：最近调用、候选经验、知识使用情况 |
 
 原有的 captures、methods、projects、trials、deliverables、feedback 等接口保持不变，供历史数据和脚本客户端继续使用。
+
+## 开发知识复用（V0）
+
+日常开发保持原样：**打开项目 → 给 Codex 任务 → 正常开发**。每台电脑安装一次 OPC Bridge 后，Codex 会在真正需要历史经验的开发任务里自动调用：
+
+```sh
+opc context --task "<当前任务>"        # 任务开始前；没有相关知识就返回 no_relevant_knowledge
+opc result  --task "<当前任务>" --outcome success --change "..." --validation "..." --knowledge-used "id1,id2"
+```
+
+- 安装：`powershell -ExecutionPolicy Bypass -File bridge/install.ps1`（程序、配置、日志都在 `%LOCALAPPDATA%\OPC\`，项目仓库里不产生任何 OPC 文件）。
+- 取用：先用模型在 notes 池里挑选，相关性低于阈值就不返回；命中后才读取正文，最多 3 条；10 分钟内相同仓库 + 相同任务直接复用上次结果。
+- 回流：结果写入 `agent_task_results`；值得长期保留的内容写入 `knowledge_candidates`，由人后续统一整理进知识仓库，OPC 不自动改 `MYOPC-Knowledge`。
+- 观察：空间页顶部有只读的「知识复用」面板（最近调用 / 候选经验 / 知识使用情况）。
+- 边界：V0 不使用 embedding、向量库、MCP、知识图谱，也不自动 commit 知识仓库。
 
 ## 定时同步
 

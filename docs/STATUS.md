@@ -1,5 +1,36 @@
 # 当前状态
 
+## 2026-09-15 开发知识复用 V0（context / result）
+
+日常开发保持「打开项目 → 给 Codex 任务 → 正常开发」，在后台按需取用 OPC 历史知识并回流结果。
+
+### 已实现
+
+- 服务端：`lib/knowledge/reuse.ts` 提供 `selectReusableKnowledge` / `recordTaskResult` / `getReuseOverview`；新增 `POST /api/v1/agent/context`、`POST /api/v1/agent/result`、`GET /api/v1/knowledge/reuse`。
+- 数据库（migration 12）：`agent_task_results`（任务、改动、验证、发现、用过的知识及效果、总结）与 `knowledge_candidates`（候选经验，默认 pending）。上下文调用记录复用通用 `events` 表（`entity_type='agent'`），用于近期重复调用 Gate 与页面观察数据。
+- 检索：只用 notes 池的标题 / 分类 / 标签 / 一句话说明 / 摘要让模型挑 0~3 条，相关性低于 70 分不返回，命中后才读取正文；10 分钟内相同仓库 + 相同任务复用上次结果，失败结果不缓存。
+- 本地 Bridge：`bridge/opc.mjs` + `bridge/install.ps1` 安装到 `%LOCALAPPDATA%\OPC\`（bin / config / cache / logs）并加入用户 PATH；命令只有 `opc context` / `opc result`（另有 `doctor`），仓库名从 git remote 解析，任何失败都返回可读 JSON 且退出码 0。
+- 全局 `~/.codex/AGENTS.md` 加入短规则：值得复用才查、机械修改不查、有价值才回流、不往项目仓库写 OPC 文件。
+- 页面：空间页顶部只读「知识复用」面板（最近调用 / 候选经验 / 知识使用情况）。
+
+### 已验证（2026-09-15）
+
+- `npm test` 61 项通过（新增 14 项：context Gate 与相关性、失败与重复调用、截断重试、结果回流与候选经验、Bridge 参数与仓库解析）；lint、`tsc --noEmit`、`next build` 通过。
+- 三个真实仓库场景（本地 OPC + 真实模型）：
+  - 简单任务（按钮文案类）：按 Gate 不调用，数据库没有对应记录。
+  - 复杂但无历史经验（flow-skill：录音实时降噪）：`context` 正常返回 `no_relevant_knowledge`，开发不受影响。
+  - 有历史经验（skill-runtime：执行期只记候选、任务后批量整理）：返回 3 条相关知识（含正文与理由）；`opc result` 保存 `task-20260915-001`，3 条知识判定「有效」，生成候选经验 1 条。
+- `git status`：vibe / flow-skill / helm 没有出现任何 OPC 文件（vibe 中两个未跟踪文件是 9-11 与 5-8 的既有文件）。
+- 页面实测：空间页显示 7 次调用 / 4 次命中 / 1 条结果 / 1 条候选，三个观察列表内容与 Bridge 日志一致。
+
+### 未解决 / 未验证
+
+- Bridge 默认指向本机 `http://127.0.0.1:3000`；指向部署实例需要在 `%LOCALAPPDATA%\OPC\config.json` 填 Basic Auth。
+- 候选经验只在 OPC 中排队，还没有整理进知识仓库的流程。
+- 相关性阈值（70）与「通用判断不算相关」的抑制效果只在小样本上观察过；notes 变多后需要重新评估检索方式。
+- 目前只有 notes 参与复用，项目 / 工具 / 图谱暂不参与。
+- Codex 自动调用对方案质量的实际影响尚未独立评估，目前验证的是命令链路、Gate 与不阻塞行为。
+
 ## 2026-09-15 图谱（map）知识类型
 
 知识仓库新增第四类条目 `map`（`maps/` 目录）。OPC 已端到端打通：同步读取 → 索引 → 模型加工 → API → 页面。首个真实条目「kill-doc 网页内容提取与重建结构」（`map_type: architecture`）已在本地同步并用真实模型生成 `reading-note-v6` 阅读说明。

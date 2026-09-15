@@ -3,6 +3,36 @@
 原始阶段记录只有这一份，按日期追加；`docs/STATUS.md` 只写当前状态，覆盖式更新。
 跨项目的整理与提炼交给独立知识仓库 `kioooice/MYOPC-Knowledge`，这里不重复维护。
 
+## 2026-09-15 开发知识复用 V0（context / result）
+
+**新增进展**
+
+- 新增 `lib/knowledge/reuse.ts`：`selectReusableKnowledge`（按任务取 0~3 条 notes）、`recordTaskResult`（结果回流 + 效果判定 + 候选经验）、`getReuseOverview`（观察数据）；API 增加 `POST /api/v1/agent/context`、`POST /api/v1/agent/result`、`GET /api/v1/knowledge/reuse`。
+- migration 12 新增 `agent_task_results`、`knowledge_candidates`；上下文调用记录写在通用 `events`（`entity_type='agent'`），用于近期重复调用 Gate 和页面数据。
+- 本地 OPC Bridge（`bridge/opc.mjs` + `bridge/install.ps1`）安装到 `%LOCALAPPDATA%\OPC\`：`opc context` / `opc result` 从 git remote 识别仓库，带缓存与 JSONL 日志，任何失败都返回可读 JSON 且不阻塞开发；项目仓库不产生任何文件。
+- 全局 `~/.codex/AGENTS.md` 增加短规则：值得复用才查、机械修改不查、有价值才回流、不往项目仓库写 OPC 文件。
+- 空间页新增只读「知识复用」面板（最近调用 / 候选经验 / 知识使用情况）。
+
+**关键决策与理由**
+
+- 结果先落 OPC、候选经验人工整理：保持 `MYOPC-Knowledge` 单向读取，不自动制造大量碎片笔记。
+- 不做 embedding / 向量库 / MCP：当前 notes 规模下「摘要池 + 模型挑选」已能跨项目复用；API 形态不变，将来换检索实现即可。
+- 相关性用分数阈值 + 明确反例（通用判断不算相关）：第一轮实测发现模型会把「先判断局部改还是重构」套到几乎任何新功能上，加入阈值后才稳定返回 `no_relevant_knowledge`。
+- 失败的上下文调用不进缓存：只有「命中」或「确认无关」才复用，模型截断等瞬时失败允许下次重试。
+- 推理模型可能把预算全用在推理上（实测 deepseek-flash 1200 tokens 全为推理、内容为空），复用调用改为与阅读说明一致的「放大预算重试一次」。
+
+**已验证**
+
+- `npm test` 61 项通过（新增 14 项覆盖 context Gate、相关性过滤、重复调用缓存、截断重试、结果回流与候选经验、Bridge 参数与仓库解析）；lint、`tsc --noEmit`、`next build` 通过。
+- 真实仓库场景（本地 OPC + 真实模型）：flow-skill 的「录音实时降噪」返回 `no_relevant_knowledge`；skill-runtime 的「执行期只记候选、任务后批量整理」返回 3 条知识与理由，`opc result` 生成 `task-20260915-001`、3 条「有效」判定与 1 条候选经验。
+- vibe / flow-skill / helm 三个业务仓库 `git status` 没有新增 OPC 文件；Bridge 日志与空间页观察数据一致（7 次调用 / 4 次命中 / 1 条结果 / 1 条候选）。
+
+**未解决 / 未验证**
+
+- Bridge 默认指向本机实例；指向部署实例需要在 `%LOCALAPPDATA%\OPC\config.json` 填 Basic Auth，服务器尚未部署本改造。
+- 候选经验还没有整理进知识仓库的流程；相关性阈值只在小样本上验证过。
+- Codex 自动调用对方案质量的实际影响尚未独立评估，目前验证的是命令链路、Gate 与不阻塞行为。
+
 ## 2026-09-15 新增第四类知识：图谱（map）
 
 **新增进展**

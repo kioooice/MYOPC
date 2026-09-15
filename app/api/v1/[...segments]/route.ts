@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { acceptVersion, BusinessError, createCapture, createDecision, createDeliverable, createDraft, createFeedback, createMethod, createProject, createProjectLocation, createTrial, createVersion, getAssets, getCapture, getCaptureFile, getCaptures, getContext, getDashboard, getEvents, getMethod, getMethods, getProject, getProjects, getLibrary, startTrial, updateCapture, updateProject, updateTrial } from "@/lib/business";
 import { KnowledgeError } from "@/lib/knowledge/repo";
-import { generateKnowledgeNote, getKnowledgeDetail, getKnowledgeOverview, processKnowledgeNotes, syncKnowledge } from "@/lib/knowledge/service";
+import { generateKnowledgeNote, getKnowledgeDetail, getKnowledgeOverview, getKnowledgeReuseOverview, processKnowledgeNotes, queryAgentContext, submitAgentResult, syncKnowledge } from "@/lib/knowledge/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ type Context = { params: Promise<{ segments: string[] }> };
 function errorResponse(error: unknown) {
   if (error instanceof BusinessError) return NextResponse.json({ error: error.code, message: error.message, details: error.details }, { status: error.status });
   if (error instanceof KnowledgeError) {
-    const status = error.code === "knowledge_entry_not_found" ? 404 : error.code === "knowledge_directory_missing" ? 400 : 502;
+    const status = error.code === "knowledge_entry_not_found" ? 404 : error.code === "knowledge_directory_missing" || error.code === "task_required" ? 400 : 502;
     return NextResponse.json({ error: error.code, message: error.message }, { status });
   }
   console.error(error);
@@ -44,6 +44,7 @@ export async function GET(request: NextRequest, context: Context) {
       if (!detail) return NextResponse.json({ error: "not_found", message: "知识条目不存在" }, { status: 404 });
       return NextResponse.json(detail);
     }
+    if (segments[0] === "knowledge" && segments[1] === "reuse") return NextResponse.json(getKnowledgeReuseOverview());
     if (segments[0] === "knowledge") {
       return NextResponse.json(getKnowledgeOverview({
         kind: request.nextUrl.searchParams.get("kind") || undefined,
@@ -87,6 +88,14 @@ export async function POST(request: NextRequest, context: Context) {
     if (key === "knowledge/process") {
       const limit = Number(body.limit);
       const result = await processKnowledgeNotes(Number.isFinite(limit) && limit > 0 ? limit : 3);
+      return NextResponse.json(result, { status: 200 });
+    }
+    if (key === "agent/context") {
+      const result = await queryAgentContext(body);
+      return NextResponse.json(result, { status: 200 });
+    }
+    if (key === "agent/result") {
+      const result = await submitAgentResult(body);
       return NextResponse.json(result, { status: 200 });
     }
   } catch (error) {

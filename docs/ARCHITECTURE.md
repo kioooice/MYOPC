@@ -15,6 +15,8 @@ MYOPC 是 Next.js 单体应用：React / TypeScript 前端、Node.js 服务端�
 | lib/knowledge/model.ts | 模型客户端（默认 DeepSeek，`chat/completions`） |
 | lib/knowledge/reading-note.ts | “阅读说明”规程：提示词、输出校验、失败保留上一次结果 |
 | lib/knowledge/service.ts | 对外服务：同步、列表、详情、生成与批量加工 |
+| lib/knowledge/reuse.ts | 开发知识复用 V0：按任务挑选历史知识、回流任务结果、生成候选经验 |
+| bridge/opc.mjs、bridge/install.ps1 | 本地 OPC Bridge：`opc context` / `opc result`，安装后与项目仓库无关 |
 | lib/business.ts、lib/db.ts | 历史业务读写与数据库结构 |
 | scripts/knowledge-sync.ts | 命令行同步与加工（可定时执行） |
 
@@ -41,6 +43,16 @@ Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知�
 
 详情页把正文第一个 Mermaid 块作为主图放在标题下方，其余章节按原文顺序渲染，章节里的其它 Mermaid 块同样渲染成图（主图不重复出现）。渲染由客户端依赖 `mermaid` 完成，宽度自适应，支持「查看大图」放大与全屏；渲染失败时显示错误信息和源码回退，并清理 mermaid 遗留的临时节点。列表页不渲染 Mermaid，只显示标题、Map 类型、一句话说明、核心结构简述和标签。
 
+## 开发知识复用（V0）
+
+目标是让日常开发保持「打开项目 → 给 Codex 任务 → 正常开发」，由全局 AGENTS.md 约定在值得复用的任务里调用本地 CLI：
+
+1. `opc context --task "..."`：Bridge 从 `git remote get-url origin` 解析 `owner/repo`（读不到时回落到目录名），POST 到 `/api/v1/agent/context`。服务端先过两道 Gate——仓库能否识别、近期是否重复调用——再把全部 visible notes 的标题 / 分类 / 标签 / 一句话说明 / 摘要交给模型挑 0~3 条，相关性分数低于阈值直接丢弃；命中后才读取正文（最多 4000 字）返回。任何失败（模型未配置、超时、服务器不可用）都返回 `used:false` 加可读 reason，不阻塞开发。
+2. `opc result --task "..." --outcome ... --change ... --validation ... --finding ... --knowledge-used ...`：POST 到 `/api/v1/agent/result`，结果写入 `agent_task_results`，同时由模型判定用过的历史知识有效 / 部分有效 / 无效，并只在确有长期价值时提取 0~2 条 `knowledge_candidates`。
+3. 候选经验只记录在 OPC，由人后续统一整理进 `MYOPC-Knowledge`；V0 不自动改知识仓库、不做 embedding / 向量库 / MCP / 知识图谱。
+
+上下文调用记录写在通用 `events` 表（`entity_type='agent'`、`kind='agent.context.queried'`），既用于近期重复调用 Gate，也是空间页「知识复用」面板的数据来源；Bridge 侧另有一份 `%LOCALAPPDATA%\OPC\` 缓存与 JSONL 日志，项目仓库不产生任何 OPC 文件。
+
 ## 数据表
 
 | 表 | 内容 |
@@ -48,6 +60,8 @@ Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知�
 | knowledge_entries | 条目索引：类型、标题、摘要、状态、标签、来源、正文、相对路径、内容哈希、可见性 |
 | knowledge_reading_notes | 每个条目的阅读说明：规程版本、来源哈希、模型、状态、内容、错误、生成时间 |
 | knowledge_sync_state | 最近一次同步的目录、仓库、分支、提交、计数和时间 |
+| agent_task_results | 开发任务回流结果：仓库、任务、改动 / 验证 / 发现、用到的知识与效果、一句话总结 |
+| knowledge_candidates | 候选经验：标题、内容、依据、建议、来源仓库与任务、状态（默认 pending） |
 
 前端不直接写库，全部经 HTTP 接口；模型只由服务端调用。
 
@@ -60,6 +74,9 @@ Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知�
 | POST | /knowledge/sync | 重新读取知识目录并更新索引 |
 | POST | /knowledge/notes | 生成或重新生成单个条目的阅读说明（`entry_id`、`force`） |
 | POST | /knowledge/process | 批量加工待处理条目（`limit`，单次最多 10 条） |
+| POST | /agent/context | 开发知识复用：按任务取 0~3 条历史知识（`repository`、`task`、可选 `force`） |
+| POST | /agent/result | 开发知识复用：回流任务结果，必要时生成候选经验 |
+| GET | /knowledge/reuse | 知识复用观察数据（最近调用、候选经验、知识使用情况） |
 | GET | /health、/dashboard、/library、/events | 运行与历史数据概览 |
 | GET | /captures、/captures/:id、/captures/:id/file | 历史素材读取 |
 | GET | /methods、/methods/:id、/projects、/projects/:id | 历史方法、项目读取 |

@@ -263,6 +263,13 @@ export function getDb() {
   addColumn("knowledge_reading_notes", "attempted_source_hash", "TEXT");
   instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (10, ?)").run(new Date().toISOString());
   instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (11, ?)").run(new Date().toISOString());
+  // 开发知识复用（V0）：任务结果先落在 OPC，可长期保留的部分变成候选经验。
+  instance.exec("CREATE TABLE IF NOT EXISTS agent_task_results (id TEXT PRIMARY KEY, repository TEXT NOT NULL DEFAULT '', task TEXT NOT NULL, outcome TEXT NOT NULL DEFAULT '', changes_json TEXT NOT NULL DEFAULT '[]', validation_json TEXT NOT NULL DEFAULT '[]', findings_json TEXT NOT NULL DEFAULT '[]', knowledge_used_json TEXT NOT NULL DEFAULT '[]', summary TEXT NOT NULL DEFAULT '', reusable INTEGER NOT NULL DEFAULT 0, candidate_count INTEGER NOT NULL DEFAULT 0, model TEXT, error TEXT, created_at TEXT NOT NULL)");
+  instance.exec("CREATE INDEX IF NOT EXISTS idx_agent_task_results_repository ON agent_task_results(repository, created_at)");
+  instance.exec("CREATE INDEX IF NOT EXISTS idx_agent_task_results_created ON agent_task_results(created_at)");
+  instance.exec("CREATE TABLE IF NOT EXISTS knowledge_candidates (id TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '', evidence TEXT NOT NULL DEFAULT '', suggestion TEXT NOT NULL DEFAULT '', repository TEXT NOT NULL DEFAULT '', task_result_id TEXT REFERENCES agent_task_results(id), related_entry_ids_json TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
+  instance.exec("CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_status ON knowledge_candidates(status, created_at)");
+  instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (12, ?)").run(new Date().toISOString());
   return instance;
 }
 

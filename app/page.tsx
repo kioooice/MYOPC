@@ -15,7 +15,11 @@ type KnowledgeItem = { id: string; kind: string; title: string; summary: string;
 type KnowledgeNoteContent = { summary: string; facts: string[]; decisions: Array<{ title: string; detail: string }>; steps: string[]; conditions: string[]; open_questions: string[]; inferences: string[] };
 type KnowledgeDetail = KnowledgeItem & { body: string; sources: Array<{ label: string; url: string | null }>; related: Array<{ id: string; title: string; kind: string; status: string }>; noteContent: KnowledgeNoteContent | null; stale: boolean; promptVersion: string };
 type KnowledgeSync = { status: "ok" | "failed" | "never"; commit: string | null; branch: string | null; message: string | null; entryCount: number; addedCount: number; updatedCount: number; removedCount: number; startedAt: string | null; finishedAt: string | null };
-type KnowledgeOverviewResponse = { sync: KnowledgeSync; model: { configured: boolean; model: string | null; baseUrl: string | null }; promptVersion: string; repository: string; directory: string; pendingNotes: number; entries: KnowledgeItem[] };
+type ReuseCall = { id: string; repository: string; task: string; usedCount: number; reason: string | null; createdAt: string; outcome: string | null };
+type ReuseCandidate = { id: string; title: string; summary: string; evidence: string; suggestion: string; repository: string; createdAt: string };
+type ReuseUsage = { id: string; title: string; usedCount: number; effective: number; partial: number; ineffective: number; unknown: number; lastUsedAt: string };
+type ReuseOverview = { counts: { calls: number; usedCalls: number; results: number; pendingCandidates: number }; recentCalls: ReuseCall[]; candidates: ReuseCandidate[]; usage: ReuseUsage[] };
+type KnowledgeOverviewResponse = { sync: KnowledgeSync; model: { configured: boolean; model: string | null; baseUrl: string | null }; promptVersion: string; repository: string; directory: string; pendingNotes: number; reuse: ReuseOverview; entries: KnowledgeItem[] };
 type WriteRequest = PendingWrite;
 type View = "overview" | "projects" | "toolbox" | "space" | "maps" | "entry" | "active" | "inbox" | "deliverables";
 
@@ -40,6 +44,7 @@ export default function Home() {
   const [knowledgeSync, setKnowledgeSync] = useState<KnowledgeSync | null>(null);
   const [knowledgeModel, setKnowledgeModel] = useState<KnowledgeOverviewResponse["model"] | null>(null);
   const [pendingNotes, setPendingNotes] = useState(0);
+  const [reuse, setReuse] = useState<ReuseOverview | null>(null);
   const [entry, setEntry] = useState<KnowledgeDetail | null>(null);
   const [entryLoading, setEntryLoading] = useState(false);
   const [notice, setNotice] = useState("");
@@ -81,6 +86,7 @@ export default function Home() {
       setKnowledgeSync(knowledgeData.sync);
       setKnowledgeModel(knowledgeData.model);
       setPendingNotes(knowledgeData.pendingNotes || 0);
+      setReuse(knowledgeData.reuse || null);
       setLatestEventSequence(data.latest_event_sequence || 0);
       setLastSyncedAt(new Date());
       setError("");
@@ -280,7 +286,7 @@ export default function Home() {
           : <KnowledgeDetailView entry={entry} busy={knowledgeBusy} model={knowledgeModel} onBack={() => goTo(lastEntrySection)} onOpen={(id, kind) => void openEntry(id, kind)} onGenerate={(id, force) => void generateNote(id, force)} />)}
         {!loading && !trial && view === "projects" && <KnowledgeListView kind="project" items={knowledgeProjects} onOpen={openEntry} />}
         {!loading && !trial && view === "toolbox" && <KnowledgeListView kind="tool" items={knowledgeTools} onOpen={openEntry} />}
-        {!loading && !trial && view === "space" && <KnowledgeListView kind="note" items={knowledgeNotes} onOpen={openEntry} />}
+        {!loading && !trial && view === "space" && <KnowledgeListView kind="note" items={knowledgeNotes} onOpen={openEntry} reuse={reuse} />}
         {!loading && !trial && view === "maps" && <KnowledgeListView kind="map" items={knowledgeMaps} onOpen={openEntry} />}
         {!loading && !trial && view === "active" && <ListView title="进行中的行动" subtitle="从这里继续目标、产物和反馈；审阅中的行动也保留在这里。" trials={activeTrials} onOpen={openTrial} empty="还没有进行中的行动" />}
         {!loading && !trial && view === "inbox" && <InboxView trials={trials} onOpen={openTrial} />}
@@ -373,7 +379,7 @@ function sortProjectsByStatus(items: KnowledgeItem[]) {
   });
 }
 
-function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" | "note" | "map"; items: KnowledgeItem[]; onOpen: (id: string, kind: string) => void }) {
+function KnowledgeListView({ kind, items, onOpen, reuse }: { kind: "project" | "tool" | "note" | "map"; items: KnowledgeItem[]; onOpen: (id: string, kind: string) => void; reuse?: ReuseOverview | null }) {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const meta = kind === "project"
     ? { eyebrow: "Projects", title: "项目", subtitle: "来自知识仓库的项目概况；进行中的排前面，已暂停的排在最后。" }
@@ -436,6 +442,37 @@ function KnowledgeListView({ kind, items, onOpen }: { kind: "project" | "tool" |
         {allGroups.map((group) => <button key={group.label} className={categoryFilter === group.label ? "category-chip active" : "category-chip"} onClick={() => setCategoryFilter(group.label)}>{group.label} <small>{group.items.length}</small></button>)}
       </div>}
     </div>
+    {kind === "note" && reuse && (reuse.counts.calls > 0 || reuse.counts.results > 0) && <details className="reuse-panel">
+      <summary>
+        <strong>知识复用</strong>
+        <span>{reuse.counts.calls} 次调用 · {reuse.counts.usedCalls} 次命中 · {reuse.counts.results} 条任务结果 · {reuse.counts.pendingCandidates} 条候选经验</span>
+      </summary>
+      <div className="reuse-body">
+        <div className="reuse-block">
+          <h4>最近调用</h4>
+          {reuse.recentCalls.length === 0 ? <p className="muted-text">还没有调用记录。</p> : <ul className="reuse-list">{reuse.recentCalls.slice(0, 5).map((call) => <li key={call.id}>
+            <span className="reuse-repo">{call.repository}</span>
+            <span className="reuse-task">{call.task}</span>
+            <span className="reuse-meta">{call.usedCount > 0 ? `使用 ${call.usedCount} 条历史知识` : "未命中"}{call.outcome ? ` · 结果：${call.outcome}` : ""}{call.usedCount === 0 && call.reason ? ` · ${call.reason}` : ""} · {new Date(call.createdAt).toLocaleString("zh-CN")}</span>
+          </li>)}</ul>}
+        </div>
+        <div className="reuse-block">
+          <h4>候选经验{reuse.counts.pendingCandidates > 0 ? `（${reuse.counts.pendingCandidates} 条待后续统一整理）` : ""}</h4>
+          {reuse.candidates.length === 0 ? <p className="muted-text">还没有候选经验。</p> : <ul className="reuse-list">{reuse.candidates.slice(0, 5).map((candidate) => <li key={candidate.id}>
+            <span className="reuse-task">{candidate.title}</span>
+            <span className="reuse-meta">{candidate.repository}{candidate.suggestion ? ` · ${candidate.suggestion}` : ""}</span>
+          </li>)}</ul>}
+        </div>
+        <div className="reuse-block">
+          <h4>知识使用情况</h4>
+          {reuse.usage.length === 0 ? <p className="muted-text">还没有被复用的知识。</p> : <ul className="reuse-list">{reuse.usage.slice(0, 5).map((item) => <li key={item.id}>
+            <span className="reuse-task">{item.title}</span>
+            <span className="reuse-meta">被使用 {item.usedCount} 次 · {item.effective} 有效 / {item.partial} 部分有效 / {item.ineffective} 无效{item.unknown > 0 ? ` / ${item.unknown} 未判定` : ""}</span>
+          </li>)}</ul>}
+        </div>
+      </div>
+      <p className="reuse-hint">结果先保存在 OPC；候选经验只做记录，后续统一整理时才进入知识仓库。</p>
+    </details>}
     {items.length === 0
       ? <div className="quiet-empty"><BookOpen size={22} /><p>知识仓库里还没有{meta.title}条目</p></div>
       : groups.map((group) => <section className="asset-group" key={group.label ?? "all"}>

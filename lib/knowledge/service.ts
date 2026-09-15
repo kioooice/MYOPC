@@ -2,6 +2,7 @@ import { getKnowledgeDirectory, getKnowledgeRepository, knowledgeSourceUrl, read
 import { pullKnowledgeRepository } from "./git";
 import { describeModelConfig, getModelConfig } from "./model";
 import { PROMPT_VERSION, generateReadingNote, processPendingReadingNotes } from "./reading-note";
+import { getReuseOverview, recordTaskResult, selectReusableKnowledge, type ReuseOverview } from "./reuse";
 import {
   applyKnowledgeSnapshot,
   countEntriesNeedingNote,
@@ -168,8 +169,23 @@ export function getKnowledgeOverview(options: { kind?: string; query?: string } 
     repository: getKnowledgeRepository(),
     directory: getKnowledgeDirectory(),
     pendingNotes: countEntriesNeedingNote(PROMPT_VERSION),
+    reuse: getReuseOverview(),
     entries: getKnowledgeList(options),
   };
+}
+
+/** 开发知识复用：任务开始前按需取用历史知识。 */
+export function queryAgentContext(body: Record<string, unknown>) {
+  return selectReusableKnowledge({ repository: body.repository, task: body.task, force: body.force });
+}
+
+/** 开发知识复用：任务结束后回流结果，必要时形成候选经验。 */
+export function submitAgentResult(body: Record<string, unknown>) {
+  return recordTaskResult(body);
+}
+
+export function getKnowledgeReuseOverview(): ReuseOverview {
+  return getReuseOverview();
 }
 
 // 一个方向写了 related 就当作双向关系：map 的作用是把已有条目串起来，
