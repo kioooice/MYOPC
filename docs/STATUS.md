@@ -23,11 +23,21 @@
 - `npm run lint`、`npx tsc --noEmit`、`npm run build` 通过。
 - 本地实例（127.0.0.1:3212，独立数据目录）实测：`opc bootstrap` 无记录时返回 `no_records`；`opc result` 写入 2 条事件（1 verified + 1 reported）后，`opc bootstrap` 返回阶段、决定、下一步与记录 ID；同一次 `submission_id` 重试不重复写入。
 
+### 服务器部署与验收（2026-09-16）
+
+- 提交 `357917e` 部署到 124.222.190.89：备份 `/opt/backups/opc/pre-v02-357917e.sqlite`（integrity ok、无外键违规）→ 快进到该提交 → `MYOPC_RELEASE=357917e` → 重建容器；`/api/v1/health` 返回 `release=357917e`，migration 13 / 14 生效，`project_events` 已建。
+- 本机 CLI 更新到 `opc-bridge 0.2.0`，并加了路径映射 `D:\Projects\video → video-project`（该项目没有 git remote）。
+- 真实视频项目走完一遍：现场检查（hypit 0.1.9 / runtime profile / 三个自建 provider / ffprobe 成片 720x1280 30fps 8.000s）→ 一次回流 5 条事件（`skipped_events_only`，未调用模型）→ `opc bootstrap` 返回阶段、决定与理由、环境验证（本机）、阻塞、下一步与记录 ID → 按下一步新增并运行 `scripts/check-distribution.mjs`（112 个内部包 junction / 13 个外部依赖 / 字体齐全，退出码 0）→ 回流第 6 条事件。
+- 边界实测：同 `submission_id` 重发 `deduped:true`；其他机器 / 分支 / 更早提交的记录被标注且 `verifiedOnThisMachine:false`；含密钥的载荷返回 `redactions:2` 且库内为脱敏文本；`OPC_SERVER` 不可达时 `queued:true` 并在下一次命令自动补发。
+- 页面用 Playwright 实测：项目详情「最近进展」与空间页候选处置（保存后待整理 0 / 最近处理 1）。
+- 业务仓库没有产生 OPC 文件；配置、机器身份、缓存、日志与队列都在 `%LOCALAPPDATA%\OPC\`。
+
 ### 未验证
 
-- 真实视频项目的「阶段回流 → 新对话恢复 → 核对本地 → 接续任务」验收（部署后进行）。
+- 真实"新对话"接续：Codex 任务 `01a0aa96-664b-7450-b786-23e383c04b3a` 两次都在本机 CC Switch 代理层失败（DeepSeek `/responses` HTTP 400 `missing field call_id`），因此"新会话自己恢复并接续"没有真正跑通。最短验收指令：在 video 项目新开一个 Codex 任务，输入「先 `opc bootstrap` 恢复项目状态，核对本地文件后继续记录里的下一步」。
 - 多机器场景只验证了标记与筛选逻辑，没有第二台真实机器。
-- 页面候选处置与最近进展区块的浏览器实测。
+- 候选处置的其它状态（已新增 / 暂存 / 舍弃）只在测试里覆盖，页面只实测了"已合并"。
+- 自动修复脚本（而不只是检查脚本）仍未写。
 
 
 ## 2026-09-15 开发知识复用 V0（context / result）

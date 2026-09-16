@@ -309,3 +309,31 @@
 - 真实视频项目的完整验收与服务器部署（见 DELIVERY_PLAN 的验证结果）。
 - 多机器场景只有标记与筛选逻辑，没有第二台真实机器。
 - 页面最近进展与候选处置只有构建与类型检查，未做浏览器实测。
+
+## 2026-09-16 OPC V0.2 部署与真实视频项目验收
+
+**新增进展**
+
+- 提交 `357917e` 部署到 124.222.190.89：部署前备份 `/opt/backups/opc/pre-v02-357917e.sqlite`（integrity ok、无外键违规），`/opt/apps/opc` 快进到该提交，`MYOPC_RELEASE=357917e`，容器 `myopc` 重建后 `/api/v1/health` 返回 `release=357917e`；migration 13 / 14 生效，`project_events` 已建。
+- 本机 CLI 更新到 `opc-bridge 0.2.0`，`%LOCALAPPDATA%\OPC\config.json` 增加路径映射 `D:\Projects\video → video-project`（该项目没有 git remote），机器身份 `WIN-20250602DRS` 写入 `machine.json`。
+- video 项目完成一次完整接续：现场检查 → 一次回流 5 条事件（progress / decision / environment / blocker / finding）→ `opc bootstrap` 恢复阶段、决定与理由、环境验证、阻塞、下一步与记录 ID → 按恢复的下一步新增并运行 `scripts/check-distribution.mjs`（只读检查发行版修复）→ 回流第 6 条事件 → 再 bootstrap 看到新阶段。
+- 页面用 Playwright 实测：项目详情「最近进展」区块与空间页候选处置（保存后待整理 0、最近处理 1）。
+
+**关键决策与理由**
+
+- 只回流事件时服务器不调用模型：这次 5 条 + 1 条事件全部是 `skipped_events_only`，事实由提交方给出，避免模型改写现场记录。
+- 检查脚本只做只读检查，不自动改发行版：缺什么就报什么，避免脚本在没核对的情况下动用户的运行环境；自动修复留作下一步。
+- 视频项目没有 git remote，用 config 的本机路径映射给它稳定身份，而不是把路径写进业务仓库。
+
+**已验证**
+
+- 幂等：同 `submission_id` 重发返回 `deduped:true`，结果 id 与事件 id 不变。
+- 边界：`OTHER-PC / feature-x / cafebabe` 的记录在 bootstrap 中标成 `sameBranch/sameMachine/sameCommit=false`、`verifiedOnThisMachine=false`，并提示"其他机器验证不代表本机已就绪、请核对更早提交"。
+- 凭据：含 `sk-…` 与 `API_KEY=…` 的载荷返回 `redactions:2`，库内保存为 `DEEPSEEK_API_KEY=[已脱敏]`。
+- 失败路径：`OPC_SERVER` 不可达时 `opc result` 返回 `queued:true`，下一次命令自动补发（doctor `flush.sent=1`），事件最终落库；业务仓库没有产生 OPC 文件。
+- 记录详情 `GET /api/v1/agent/events/:id` 正常；候选处置缺少 `--note` 返回 400。
+
+**未解决 / 未验证**
+
+- 真实"新对话"接续没跑通：Codex 任务 `01a0aa96-664b-7450-b786-23e383c04b3a` 两次都在本机 CC Switch 代理层失败（DeepSeek `/responses` HTTP 400 `missing field call_id`）。已在 STATUS 里给出最短验收指令。
+- 第二台真实机器、候选处置的其余状态（已新增 / 暂存 / 舍弃）页面路径、自动修复脚本仍未验证或未实现。

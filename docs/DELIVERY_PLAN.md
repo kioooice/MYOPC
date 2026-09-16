@@ -50,4 +50,29 @@
 
 ## 验证结果
 
-（部署与真实视频项目验收后在此填写：提交号、部署版本、验收步骤与结果、未验证项。）
+提交与部署：
+
+- 提交 `357917e` 已推送并部署到 124.222.190.89（`/opt/apps/opc` 快进到该提交，`MYOPC_RELEASE=357917e`，容器 `myopc` 重建后 `/api/v1/health` 返回 `release=357917e`）。
+- 部署前备份 `/opt/backups/opc/pre-v02-357917e.sqlite`（integrity ok、无外键违规）；migration 13 / 14 在该实例生效，`project_events` 已建。
+- 本机 CLI 更新到 `opc-bridge 0.2.0`，并在 `%LOCALAPPDATA%\OPC\config.json` 增加路径映射 `D:\Projects\video → video-project`（视频项目没有 git remote）。
+
+真实视频项目验收（video，`D:\Projects\video`）：
+
+1. 现场检查：`hypit --version` = 0.1.9；`.hypit/runtime` 指向 `hypit.runtime.json`（endpoints：autodl.h3 / senseaudio.tts / senseaudio.asr / media.local / hyperframes.local）；`packages/` 下三个自建 provider；`ffprobe output\zh-short-final.mp4` = h264 720x1280 30fps / 8.000s / AAC / 182,494 字节。
+2. 阶段回流：一次 `opc result` 写入 5 条事件——progress（verified，证据 `file:output/zh-short-final.mp4`）、decision（WhisperX 对齐由 SenseAudio ASR 承担，附理由）、environment（本地 runtime 已选择，凭据只写槽名）、blocker（发行版修复不可持久）、finding（产物复用，8 → 3 个请求）。返回 `extraction: skipped_events_only`，服务器没有调用模型。
+3. 新会话恢复：`opc bootstrap` 返回阶段、决定（含理由）、环境验证（`verifiedOnThisMachine: true`）、未解除阻塞、下一步与 5 个 record ID。
+4. 核对本地：用 ffprobe、`hypit --version`、`.hypit/runtime`、`packages/` 逐项核对，与恢复摘要一致。
+5. 接续实际任务：按记录里的下一步新增 `scripts/check-distribution.mjs`（只读检查发行版修复是否还在），运行结果 112 个内部包 junction / 13 个外部依赖 / 字体依赖齐全、退出码 0，并回流为第 6 条事件；再次 `bootstrap --force` 能看到新的阶段与下一步。
+
+边界与失败路径（部署实例实测）：
+
+- 幂等：同 `submission_id` 重发返回 `deduped:true`，结果 id 与事件 id 不变。
+- 分支 / 机器 / 提交：`OTHER-PC / feature-x / cafebabe` 的记录在 bootstrap 里标成 `sameBranch/sameMachine/sameCommit = false`、`verifiedOnThisMachine: false`，并提示"其他机器验证不代表本机已就绪、请核对更早提交"。
+- 凭据：含 `sk-…` 与 `API_KEY=…` 的载荷返回 `redactions: 2`，库内保存为 `DEEPSEEK_API_KEY=[已脱敏]`。
+- 服务不可用：把 `OPC_SERVER` 指向不可达地址时 `opc result` 返回 `queued:true`，下一次命令自动补发（doctor `flush.sent = 1`），事件最终落库。
+- 页面：本地实例用 Playwright 实测项目详情「最近进展」（阶段、关键事件、环境验证、下一步）与空间页候选处置（保存后待整理 0、最近处理 1）。
+- 业务仓库没有产生任何 OPC 文件；配置、机器身份、缓存、日志与待重传队列都在 `%LOCALAPPDATA%\OPC\`。
+
+未验证项：
+
+- 真实"新对话"接续：创建的 Codex 任务 `01a0aa96-664b-7450-b786-23e383c04b3a`（video 项目）两次都在本机 CC Switch 代理层失败（DeepSeek `/responses` HTTP 400 `missing field call_id`），所以没有真正跑通"新会话自己恢复并接续"。最短验收指令见 STATUS 的「未验证」。
