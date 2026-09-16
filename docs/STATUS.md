@@ -26,7 +26,7 @@
 ### 服务器部署与验收（2026-09-16）
 
 - 提交 `357917e` 部署到 124.222.190.89：备份 `/opt/backups/opc/pre-v02-357917e.sqlite`（integrity ok、无外键违规）→ 快进到该提交 → `MYOPC_RELEASE=357917e` → 重建容器；`/api/v1/health` 返回 `release=357917e`，migration 13 / 14 生效，`project_events` 已建。
-- 本机 CLI 更新到 `opc-bridge 0.2.0`，并加了路径映射 `D:\Projects\video → video-project`（该项目没有 git remote）。
+- 本机 CLI 更新到 `opc-bridge 0.2.0`（验收修复后为 0.2.1），并加了路径映射 `D:\Projects\video → video-project`（该项目没有 git remote）。
 - 真实视频项目走完一遍：现场检查（hypit 0.1.9 / runtime profile / 三个自建 provider / ffprobe 成片 720x1280 30fps 8.000s）→ 一次回流 5 条事件（`skipped_events_only`，未调用模型）→ `opc bootstrap` 返回阶段、决定与理由、环境验证（本机）、阻塞、下一步与记录 ID → 按下一步新增并运行 `scripts/check-distribution.mjs`（112 个内部包 junction / 13 个外部依赖 / 字体齐全，退出码 0）→ 回流第 6 条事件。
 - 边界实测：同 `submission_id` 重发 `deduped:true`；其他分支 / 更早提交的记录被标注；含密钥的载荷返回 `redactions:2` 且库内为脱敏文本；`OPC_SERVER` 不可达时 `queued:true` 并在下一次命令自动补发。
 - 页面用 Playwright 实测：项目详情「最近进展」与空间页候选处置（保存后待整理 0 / 最近处理 1）。

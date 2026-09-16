@@ -88,14 +88,27 @@ export function repositoryFromRemote(remote) {
   return "";
 }
 
+/** 目录归一化：解析成绝对路径、去掉结尾分隔符、Windows 下大小写不敏感。 */
+function normalizeDirectory(value) {
+  const resolved = resolve(String(value)).replace(/[\\/]+$/, "");
+  return resolved.toLowerCase();
+}
+
+/** 目录边界判断：等于该目录，或位于它下面；D:\a\video-other 不算 D:\a\video 的子目录。 */
+export function isWithinDirectory(target, base) {
+  if (!target || !base) return false;
+  if (target === base) return true;
+  return target.startsWith(base + "\\") || target.startsWith(base + "/");
+}
+
 function configuredRepository(cwd, config) {
   const projects = config?.projects && typeof config.projects === "object" ? config.projects : {};
-  const target = resolve(cwd).toLowerCase();
+  const target = normalizeDirectory(cwd);
   let best = "";
   let bestLength = -1;
   for (const [path, repository] of Object.entries(projects)) {
-    const candidate = resolve(String(path)).toLowerCase();
-    if (!target.startsWith(candidate)) continue;
+    const candidate = normalizeDirectory(path);
+    if (!isWithinDirectory(target, candidate)) continue;
     if (candidate.length > bestLength) { best = String(repository); bestLength = candidate.length; }
   }
   return best;
@@ -250,26 +263,28 @@ function bootstrapCacheFile() {
   return join(directory, "bootstrap.json");
 }
 
-function bootstrapCacheKey(repository, branch, machine) {
-  return createHash("sha256").update(`${repository}|${branch || ""}|${machine || ""}`).digest("hex").slice(0, 24);
+function bootstrapCacheKey(repository, branch, machine, commit, limit) {
+  // 当前提交与 limit 会改变返回结果（版本提示、最近记录条数），必须参与缓存键，
+  // 否则分支不变、提交变了的时候会拿到旧的恢复摘要。
+  return createHash("sha256").update(`${repository}|${branch || ""}|${machine || ""}|${commit || ""}|${limit || ""}`).digest("hex").slice(0, 24);
 }
 
-function readBootstrapCache(repository, branch, machine, ttlMinutes) {
+function readBootstrapCache(repository, branch, machine, commit, limit, ttlMinutes) {
   if (!(ttlMinutes > 0)) return null;
   try {
     const store = JSON.parse(readFileSync(bootstrapCacheFile(), "utf8"));
-    const entry = store[bootstrapCacheKey(repository, branch, machine)];
+    const entry = store[bootstrapCacheKey(repository, branch, machine, commit, limit)];
     if (!entry) return null;
     if (Date.now() - new Date(entry.at).getTime() > ttlMinutes * 60 * 1000) return null;
     return entry.result;
   } catch { return null; }
 }
 
-function writeBootstrapCache(repository, branch, machine, result) {
+function writeBootstrapCache(repository, branch, machine, commit, limit, result) {
   try {
     const file = bootstrapCacheFile();
     const store = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) || {} : {};
-    store[bootstrapCacheKey(repository, branch, machine)] = { at: new Date().toISOString(), repository, result };
+    store[bootstrapCacheKey(repository, branch, machine, commit, limit)] = { at: new Date().toISOString(), repository, commit: commit || null, result };
     writeFileSync(file, JSON.stringify(Object.fromEntries(Object.entries(store).slice(-20))), "utf8");
   } catch { /* 缓存失败不影响开发 */ }
 }
@@ -350,7 +365,7 @@ function enqueuePending(item) {
 }
 
 /** 补发失败的待重传记录：每次最多 3 条，超过 20 次的不再重试，也不阻断当前任务。 */
-async function flushPending(config) {
+export async function flushPending(config) {
   const items = readQueue();
   if (items.length === 0) return { sent: 0, remaining: 0, skipped: 0 };
   const remaining = [];
@@ -367,6 +382,8 @@ async function flushPending(config) {
     try {
       await postJson(config, item.path, item.body);
       sent += 1;
+      // 补发成功后，这个项目的恢复摘要已经过期，清掉缓存让下一次 bootstrap 重新取。
+      if (item.path === "/api/v1/agent/result" && item.body?.repository) clearBootstrapCache(String(item.body.repository));
       log({ command: "queue.flush", ok: true, submissionId: item.submissionId });
     } catch (error) {
       const message = error instanceof Error ? error.message : "重传失败";
@@ -423,6 +440,8 @@ export async function runContext({ flags, config, cwd = process.cwd() }) {
 }
 
 export async function runResult({ flags, multi, events = [], config, cwd = process.cwd() }) {
+  // 总开关关闭时：不请求服务器，也不把这次回流放进待上传队列。
+  if (!config.enabled) return { saved: false, reason: "bridge_disabled", queued: false, message: "OPC 总开关已关闭，未读写服务器" };
   const payload = flags.stdin ? await readStdin() : {};
   const git = gitContext(cwd);
   const repository = flags.repo || payload.repository || resolveRepository(cwd, config);
@@ -500,15 +519,16 @@ export async function runBootstrap({ flags, config, cwd = process.cwd() }) {
   if (!repository) return { used: false, reason: "repository_unresolved", machine, branch: branch || null, message: "无法识别仓库；可在 %LOCALAPPDATA%\\OPC\\config.json 的 projects 里配置本机路径映射" };
   const force = flags.force === true || payload.force === true;
   if (!force) {
-    const cached = readBootstrapCache(repository, branch, machine, Number(config.cacheMinutes));
+    const cached = readBootstrapCache(repository, branch, machine, body.commit, body.limit, Number(config.cacheMinutes));
     if (cached) return { ...cached, cached: true };
   }
   const result = await postJson(config, "/api/v1/agent/bootstrap", body);
-  if (result?.used) writeBootstrapCache(repository, branch, machine, result);
+  if (result?.used) writeBootstrapCache(repository, branch, machine, body.commit, body.limit, result);
   return result;
 }
 
 export async function runCandidates({ flags, config }) {
+  if (!config.enabled) return { disabled: true, resolved: false, reason: "bridge_disabled", pending: [], resolvedCandidates: [], message: "OPC 总开关已关闭，未读写服务器" };
   if (flags.id && flags.status) {
     if (!flags.note) return { resolved: false, reason: "note_required", message: "处置候选经验需要 --note 说明理由" };
     return postJson(config, `/api/v1/knowledge/candidates/${encodeURIComponent(flags.id)}/resolve`, {
@@ -532,13 +552,17 @@ async function runDoctor(config) {
   const machine = machineIdentity(config);
   let reachable = false;
   let detail = "";
-  try {
-    const headers = authHeaders(config);
-    const response = await fetch(`${String(config.serverUrl).replace(/\/+$/, "")}/api/v1/health`, { headers, signal: AbortSignal.timeout(5000) });
-    reachable = response.ok;
-    detail = reachable ? await response.text() : `HTTP ${response.status}`;
-  } catch (error) {
-    detail = error instanceof Error ? error.message : "请求失败";
+  if (!config.enabled) {
+    detail = "bridge_disabled：总开关关闭，没有访问服务器";
+  } else {
+    try {
+      const headers = authHeaders(config);
+      const response = await fetch(`${String(config.serverUrl).replace(/\/+$/, "")}/api/v1/health`, { headers, signal: AbortSignal.timeout(5000) });
+      reachable = response.ok;
+      detail = reachable ? await response.text() : `HTTP ${response.status}`;
+    } catch (error) {
+      detail = error instanceof Error ? error.message : "请求失败";
+    }
   }
   const queue = readQueue();
   return {
@@ -552,13 +576,14 @@ async function runDoctor(config) {
     queue: { pending: queue.length, attempts: queue.reduce((sum, item) => sum + (item.attempts || 0), 0) },
     reachable,
     detail,
+    skipped: config.enabled ? null : "bridge_disabled",
   };
 }
 
 export async function main(argv = process.argv.slice(2), cwd = process.cwd()) {
   const { command, flags, multi, events } = parseArgs(argv);
   if (!command || command === "help" || flags.help) { process.stdout.write(HELP); return 0; }
-  if (command === "version" || flags.version) { process.stdout.write("opc-bridge 0.2.0\n"); return 0; }
+  if (command === "version" || flags.version) { process.stdout.write("opc-bridge 0.2.1\n"); return 0; }
   const config = loadConfig();
   const started = Date.now();
   const contextFallback = (reason, message) => ({ used: false, reason, ...(message ? { message } : {}) });

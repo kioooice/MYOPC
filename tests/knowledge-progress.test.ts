@@ -167,6 +167,40 @@ describe("bootstrap · 恢复摘要", () => {
     expect(summary.recent.some((record) => record.status === "superseded")).toBe(true);
   });
 
+  it("当前阶段、阻塞和下一步只取当前分支，其他分支只作参考", () => {
+    saveSample([{ event_type: "blocker", title: "main 上的阻塞", content: "main 卡住", next_step: "先修 main 的问题", machine: "WIN-TEST", branch: "main" }], "sub-scope-main");
+    saveSample([
+      { event_type: "progress", title: "feature 上的进展", content: "feature 做完了", next_step: "继续 feature 的活", machine: "WIN-TEST", branch: "feature-x" },
+      { event_type: "blocker", title: "feature 上的阻塞", content: "feature 卡住", machine: "WIN-TEST", branch: "feature-x" },
+    ], "sub-scope-other");
+
+    const summary = buildRecoverySummary({ repository, branch: "main", machine: "WIN-TEST" });
+    expect(summary.blockers.map((item) => item.title)).toEqual(["main 上的阻塞"]);
+    expect(summary.nextSteps.map((item) => item.text)).toEqual(["先修 main 的问题"]);
+    expect(summary.nextSteps[0].scope).toBe("current-branch");
+    expect(summary.nextSteps[0].branch).toBe("main");
+    // 其他分支的阶段不能顶替当前阶段
+    expect(summary.phase).toBeNull();
+    expect(summary.notes.join("")).toContain("只作参考");
+    const other = summary.recent.find((item) => item.title === "feature 上的进展");
+    expect(other?.sameBranch).toBe(false);
+    expect(other?.note).toContain("feature-x");
+  });
+
+  it("没有分支的项目仍然正常恢复阶段、阻塞与下一步", () => {
+    saveSample([
+      { event_type: "progress", title: "成片已完成", content: "本地渲染通过", next_step: "接入 H3 画面", machine: "WIN-TEST" },
+      { event_type: "blocker", title: "缺 CJK 字体", content: "noto-sans-sc 未安装", machine: "WIN-TEST" },
+    ], "sub-scope-nobranch");
+
+    const summary = buildRecoverySummary({ repository, machine: "WIN-TEST" });
+    expect(summary.phase?.title).toBe("成片已完成");
+    expect(summary.blockers.map((item) => item.title)).toEqual(["缺 CJK 字体"]);
+    expect(summary.nextSteps.map((item) => item.text)).toEqual(["接入 H3 画面"]);
+    expect(summary.nextSteps[0].scope).toBe("unversioned");
+    expect(summary.nextSteps[0].branch).toBeNull();
+  });
+
   it("阶段与下一步都来自记录本身", () => {
     saveSample([{
       event_type: "progress", title: "中文短视频流水线打通", content: "TTS → 对齐 → 字幕 → 渲染 → 成片",

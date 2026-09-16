@@ -381,6 +381,23 @@ export type EnvironmentProgress = ProgressRecord & {
 
 export type BootstrapConflict = { topic: string; note: string; records: ProgressRecord[] };
 
+/** 下一步的来源范围：当前分支、未绑定分支（例如还没有 git 的项目）、当前分支未知。 */
+export type NextStepScope = "current-branch" | "unversioned" | "branch-unknown";
+
+function nextStepScope(record: ProgressRecord): NextStepScope {
+  if (!record.branch) return "unversioned";
+  if (record.sameBranch === true) return "current-branch";
+  return "branch-unknown";
+}
+
+/**
+ * 当前分支范围：明确属于其他分支的记录只作参考，不进入"当前阶段 / 阻塞 / 下一步"。
+ * 记录和调用方都没有分支信息时（例如 video 项目），按当前范围处理。
+ */
+function inCurrentBranchScope(record: ProgressRecord) {
+  return record.sameBranch !== false;
+}
+
 export type BootstrapCounts = {
   records: number;
   sameBranch: number;
@@ -406,7 +423,7 @@ export type BootstrapResult = {
   decisions: ProgressRecord[];
   environment: EnvironmentProgress[];
   blockers: ProgressRecord[];
-  nextSteps: Array<{ text: string; recordId: string }>;
+  nextSteps: Array<{ text: string; recordId: string; branch: string | null; scope: NextStepScope }>;
   conflicts: BootstrapConflict[];
   notes: string[];
   truncated: boolean;
@@ -509,18 +526,20 @@ export function buildRecoverySummary(input: { repository?: unknown; branch?: unk
     .filter((record) => record.type === "environment")
     .slice(0, 6)
     .map((record) => ({ ...record, verifiedOnThisMachine: record.status === "verified" && record.sameMachine === true }));
-  const blockers = active.filter((record) => record.type === "blocker").slice(0, 5);
-  const phase = active.find((record) => record.type === "progress" || record.type === "plan") ?? null;
-  const goalRecord = active.find((record) => record.type === "plan") ?? null;
+  // 当前阶段、阻塞和下一步只按当前分支范围取；其他分支的记录留在 recent 里作参考。
+  const scoped = active.filter(inCurrentBranchScope);
+  const blockers = scoped.filter((record) => record.type === "blocker").slice(0, 5);
+  const phase = scoped.find((record) => record.type === "progress" || record.type === "plan") ?? null;
+  const goalRecord = scoped.find((record) => record.type === "plan") ?? null;
 
-  const nextSteps: Array<{ text: string; recordId: string }> = [];
+  const nextSteps: Array<{ text: string; recordId: string; branch: string | null; scope: NextStepScope }> = [];
   const seenSteps = new Set<string>();
   // 只取有效记录：被替代的记录里的"下一步"已经不作数了。
-  for (const record of active.slice(0, 10)) {
+  for (const record of scoped.slice(0, 10)) {
     const step = record.nextStep.trim();
     if (!step || seenSteps.has(step)) continue;
     seenSteps.add(step);
-    nextSteps.push({ text: trim(step, MAX_NEXT_STEP), recordId: record.id });
+    nextSteps.push({ text: trim(step, MAX_NEXT_STEP), recordId: record.id, branch: record.branch, scope: nextStepScope(record) });
     if (nextSteps.length >= 5) break;
   }
 
@@ -548,7 +567,9 @@ export function buildRecoverySummary(input: { repository?: unknown; branch?: unk
   const olderCommit = annotated.filter((record) => record.sameCommit === false).length;
   const sameBranch = annotated.length - otherBranch;
   const notes: string[] = [];
-  if (otherBranch > 0) notes.push(`${otherBranch} 条记录来自其他分支，已在记录上标注分支`);
+  if (otherBranch > 0) notes.push(`${otherBranch} 条记录来自其他分支，只作参考，未计入当前阶段 / 阻塞 / 下一步`);
+  const otherBranchPhase = active.find((record) => record.sameBranch === false && (record.type === "progress" || record.type === "plan"));
+  if (otherBranch > 0 && !phase && otherBranchPhase) notes.push("当前分支没有阶段记录，最近的其他分支阶段只能作为参考（见 recent 中带分支标注的记录）");
   if (otherMachine > 0) notes.push(`${otherMachine} 条记录来自其他机器；其他机器验证过的配置不代表本机已就绪`);
   if (olderCommit > 0) notes.push(`${olderCommit} 条记录对应更早的提交，请核对相关变化后再沿用`);
   if (blockers.length > 0) notes.push(`有 ${blockers.length} 条未解除的阻塞记录`);

@@ -2,14 +2,25 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { machineIdentity, parseArgs, redactSecrets, repositoryFromRemote, resolveRepository } from "../bridge/opc.mjs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { flushPending, isWithinDirectory, machineIdentity, parseArgs, readQueue, redactSecrets, repositoryFromRemote, resolveRepository, runBootstrap, runCandidates, runResult } from "../bridge/opc.mjs";
 
 const originalOpcHome = process.env.OPC_HOME;
 afterEach(() => {
+  vi.unstubAllGlobals();
   if (originalOpcHome === undefined) delete process.env.OPC_HOME;
   else process.env.OPC_HOME = originalOpcHome;
 });
+
+function tempHome() {
+  const home = mkdtempSync(join(tmpdir(), "opc-home-"));
+  process.env.OPC_HOME = home;
+  return home;
+}
+
+function jsonResponse(payload) {
+  return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+}
 
 describe("OPC Bridge", () => {
   it("从常见 remote 形式解析 owner/repo", () => {
@@ -74,5 +85,81 @@ describe("OPC Bridge", () => {
 
   it("config.machine 覆盖本机机器身份", () => {
     expect(machineIdentity({ machine: "custom-machine" })).toBe("custom-machine");
+  });
+
+  it("路径映射按目录边界匹配：video 命中，video-other 不命中", () => {
+    const config = { projects: { "D:\\Projects\\video": "video-project" } };
+    expect(resolveRepository("D:\\Projects\\video", config)).toBe("video-project");
+    expect(resolveRepository("D:\\Projects\\video\\productions\\zh-short", config)).toBe("video-project");
+    expect(resolveRepository("D:\\Projects\\video-other", config)).toBe("video-other");
+    const nested = { projects: { "D:\\Projects": "projects-root", "D:\\Projects\\video": "video-project" } };
+    expect(resolveRepository("D:\\Projects\\video\\x", nested)).toBe("video-project");
+    expect(resolveRepository("D:\\Projects\\helm", nested)).toBe("projects-root");
+    expect(isWithinDirectory("d:\\projects\\video", "d:\\projects")).toBe(true);
+    expect(isWithinDirectory("d:\\projects\\video-other", "d:\\projects\\video")).toBe(false);
+    expect(isWithinDirectory("d:\\projects", "d:\\projects\\video")).toBe(false);
+  });
+
+  it("总开关关闭时 result / candidates 不碰网络，也不新增待上传内容", async () => {
+    const home = tempHome();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const result = await runResult({ flags: { repo: "video-project", task: "x" }, multi: { change: ["a"], validation: [], finding: [] }, events: [{ type: "progress", title: "t", content: "c" }], config: { enabled: false }, cwd: process.cwd() });
+      expect(result).toMatchObject({ saved: false, reason: "bridge_disabled", queued: false });
+      const candidates = await runCandidates({ flags: { id: "cand-1", status: "merged", note: "理由" }, config: { enabled: false } });
+      expect(candidates).toMatchObject({ reason: "bridge_disabled", resolved: false });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(readQueue()).toHaveLength(0);
+      expect(existsSync(join(home, "queue", "pending.jsonl"))).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("提交变化后 bootstrap 重新取；补发成功后清掉该项目的恢复缓存", async () => {
+    const home = tempHome();
+    const config = { enabled: true, serverUrl: "http://127.0.0.1:1", timeoutMs: 1000, cacheMinutes: 10, auth: {} };
+    try {
+      const fetchMock = vi.fn(async (url, options) => {
+        const body = JSON.parse(options.body);
+        return jsonResponse({
+          used: true, repository: body.repository, branch: body.branch, commit: body.commit, machine: body.machine,
+          counts: { records: 1, sameBranch: 1, otherBranch: 0, otherMachine: 0, olderCommit: 0 },
+          recent: [], decisions: [], environment: [], blockers: [], nextSteps: [], conflicts: [], notes: [], recordIds: [],
+        });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const first = await runBootstrap({ flags: { repo: "video-project", branch: "main", commit: "aaa1111", machine: "TEST-PC" }, config, cwd: process.cwd() });
+      expect(first.used).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      const sameCommit = await runBootstrap({ flags: { repo: "video-project", branch: "main", commit: "aaa1111", machine: "TEST-PC" }, config, cwd: process.cwd() });
+      expect(sameCommit.cached).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      const newCommit = await runBootstrap({ flags: { repo: "video-project", branch: "main", commit: "bbb2222", machine: "TEST-PC" }, config, cwd: process.cwd() });
+      expect(newCommit.cached).not.toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      const cacheFile = join(home, "cache", "bootstrap.json");
+      expect(Object.keys(JSON.parse(readFileSync(cacheFile, "utf8"))).length).toBeGreaterThan(0);
+
+      // 回流失败 → 进入待重传队列
+      vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("fetch failed"); }));
+      const queued = await runResult({ flags: { repo: "video-project", task: "t" }, multi: { change: ["x"], validation: [], finding: [] }, events: [], config, cwd: process.cwd() });
+      expect(queued).toMatchObject({ saved: false, queued: true });
+      expect(readQueue()).toHaveLength(1);
+
+      // 恢复网络后补发 → 该项目的恢复缓存被清掉
+      vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ saved: true, resultId: "task-1" })));
+      const flush = await flushPending(config);
+      expect(flush).toMatchObject({ sent: 1, remaining: 0 });
+      expect(readQueue()).toHaveLength(0);
+      expect(JSON.parse(readFileSync(cacheFile, "utf8"))).toEqual({});
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

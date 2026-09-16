@@ -55,7 +55,7 @@
 
 - 提交 `357917e` 已推送并部署到 124.222.190.89（`/opt/apps/opc` 快进到该提交，`MYOPC_RELEASE=357917e`，容器 `myopc` 重建后 `/api/v1/health` 返回 `release=357917e`）。
 - 部署前备份 `/opt/backups/opc/pre-v02-357917e.sqlite`（integrity ok、无外键违规）；migration 13 / 14 在该实例生效，`project_events` 已建。
-- 本机 CLI 更新到 `opc-bridge 0.2.0`，并在 `%LOCALAPPDATA%\OPC\config.json` 增加路径映射 `D:\Projects\video → video-project`（视频项目没有 git remote）。
+- 本机 CLI 更新到 `opc-bridge 0.2.0`（验收修复后为 0.2.1），并在 `%LOCALAPPDATA%\OPC\config.json` 增加路径映射 `D:\Projects\video → video-project`（视频项目没有 git remote）。
 
 真实视频项目验收（video，`D:\Projects\video`）：
 
