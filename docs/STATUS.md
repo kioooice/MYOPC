@@ -9,7 +9,7 @@
 - 阶段事件：`project_events`（migration 13）保存类型（plan / progress / decision / environment / finding / blocker）、内容、理由、状态、验证方式、证据、下一步、机器 / 分支 / 提交 / 未提交标记，以及 `supersedes_id / superseded_by` 更正关系。
 - `opc result` 扩展：一次回流可以带多个 `--event`，也可以继续用原来的 `--task/--change/--validation/--finding/--knowledge-used`；`agent_task_results` 增加 `submission_id / machine / branch / commit_sha / dirty / event_count`，同一次回流重试按（submission_id, 序号）判重，不重复写入。
 - 状态语义：`planned / reported / verified / blocked / superseded`。标记 `verified` 需要验证方式或证据，否则按执行方报告记录；服务器不会自动升级状态。
-- `opc bootstrap`：新增 `POST /api/v1/agent/bootstrap`，按仓库 + 分支 + 机器 + 提交筛选并组装恢复摘要（阶段、最近记录、决定与理由、环境验证、阻塞、下一步、冲突、记录 ID），结果有长度上限；`GET /api/v1/agent/events/:id` 读取单条记录详情。
+- `opc bootstrap`：新增 `POST /api/v1/agent/bootstrap`，按仓库 + 分支 + 提交筛选并组装恢复摘要（阶段、最近记录、决定与理由、环境验证、阻塞、下一步、冲突、记录 ID；`machine` 只作来源标注），结果有长度上限；`GET /api/v1/agent/events/:id` 读取单条记录详情。
 - 模型边界：只回流事件时不调用模型；客户端已提交总结或候选经验时不调用模型；知识阅读说明与知识相关性判断保持原样。恢复摘要在服务端是纯筛选与组装。
 - 凭据边界：Bridge 与服务器两侧都做一次脱敏，上传载荷不出现 Token / 密码原文；不读取配置文件整体，不要求上传会话、日志或代码。
 - 候选经验处置：`POST /api/v1/knowledge/candidates/:id/resolve` + `opc candidates`，状态为已合并 / 已新增 / 暂存 / 舍弃，记录理由、对应条目与知识仓库提交；处理后移出待整理列表，历史保留。
@@ -28,14 +28,14 @@
 - 提交 `357917e` 部署到 124.222.190.89：备份 `/opt/backups/opc/pre-v02-357917e.sqlite`（integrity ok、无外键违规）→ 快进到该提交 → `MYOPC_RELEASE=357917e` → 重建容器；`/api/v1/health` 返回 `release=357917e`，migration 13 / 14 生效，`project_events` 已建。
 - 本机 CLI 更新到 `opc-bridge 0.2.0`，并加了路径映射 `D:\Projects\video → video-project`（该项目没有 git remote）。
 - 真实视频项目走完一遍：现场检查（hypit 0.1.9 / runtime profile / 三个自建 provider / ffprobe 成片 720x1280 30fps 8.000s）→ 一次回流 5 条事件（`skipped_events_only`，未调用模型）→ `opc bootstrap` 返回阶段、决定与理由、环境验证（本机）、阻塞、下一步与记录 ID → 按下一步新增并运行 `scripts/check-distribution.mjs`（112 个内部包 junction / 13 个外部依赖 / 字体齐全，退出码 0）→ 回流第 6 条事件。
-- 边界实测：同 `submission_id` 重发 `deduped:true`；其他机器 / 分支 / 更早提交的记录被标注且 `verifiedOnThisMachine:false`；含密钥的载荷返回 `redactions:2` 且库内为脱敏文本；`OPC_SERVER` 不可达时 `queued:true` 并在下一次命令自动补发。
+- 边界实测：同 `submission_id` 重发 `deduped:true`；其他分支 / 更早提交的记录被标注；含密钥的载荷返回 `redactions:2` 且库内为脱敏文本；`OPC_SERVER` 不可达时 `queued:true` 并在下一次命令自动补发。
 - 页面用 Playwright 实测：项目详情「最近进展」与空间页候选处置（保存后待整理 0 / 最近处理 1）。
-- 业务仓库没有产生 OPC 文件；配置、机器身份、缓存、日志与队列都在 `%LOCALAPPDATA%\OPC\`。
+- 业务仓库没有产生 OPC 文件；配置、缓存、日志与队列都在 `%LOCALAPPDATA%\OPC\`。
 
 ### 未验证
 
 - 真实"新对话"接续：委派创建的任务 `01a0aa96-664b-7450-b786-23e383c04b3a` 两次都在第一次请求就失败——通过应用委派创建的任务会往新会话注入没有 `call_id` 的 `function_call_output`（`name: create_thread` / `send_message_to_thread`），DeepSeek `/v1/responses` 校验器直接返回 400 `missing field call_id`（已用最小请求复现：无 `call_id` → 400；带 `call_id` → 另一条校验错误）。普通会话里真实工具调用的 `function_call_output` 都带 `call_id`，所以只有委派创建的任务会失败。这不是 OPC 的问题。最短验收指令：在 video 项目**用界面正常新建任务**（不要用委派），输入「先 `opc bootstrap` 恢复项目状态，核对本地文件后继续记录里的下一步」。
-- 多机器场景只验证了标记与筛选逻辑，没有第二台真实机器。
+- 跨机器不在范围内（用户 2026-09-16 明确）：只在本机 + 服务器这一套里使用；`machine` 字段保留为记录来源标注，不做多机同步、也不再把"其他机器验证过"当成独立边界去验收。
 - 候选处置的其它状态（已新增 / 暂存 / 舍弃）只在测试里覆盖，页面只实测了"已合并"。
 - 视频项目的发行版修复已从只读检查扩成 `--repair`（在干净 TEMP 重装场景验证过），原阻塞记录用新记录 `supersedes` 关闭；恢复摘要在这次也随之修正为"被替代的记录不再贡献下一步、更新时间取最新有效记录"。
 

@@ -19,7 +19,7 @@ opc doctor
 事件状态：`planned` / `reported` / `verified` / `blocked`；不写时按类型推断，`verified` 需要 `--verification` 或 `--evidence`，否则按执行方报告记录。
 候选处置：`merged`（已合并）/ `added`（已新增）/ `hold`（暂存）/ `discarded`（舍弃），`--note` 必填。
 
-## 安装（每台电脑一次）
+## 安装（本机一次）
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File D:\Projects\myopc\bridge\install.ps1
@@ -29,7 +29,7 @@ powershell -ExecutionPolicy Bypass -File D:\Projects\myopc\bridge\install.ps1
 
 - `%LOCALAPPDATA%\OPC\bin\opc.mjs` 与 `opc.cmd`（把 `%LOCALAPPDATA%\OPC\bin` 加入用户 PATH）；
 - `%LOCALAPPDATA%\OPC\config.json`：`serverUrl`、可选 Basic Auth、超时、缓存分钟数、总开关，可选 `machine` 与 `projects`；
-- `%LOCALAPPDATA%\OPC\machine.json`：本机机器身份（首次调用时生成）；
+- `%LOCALAPPDATA%\OPC\machine.json`：机器标识（首次调用时生成，只用于标注记录来自哪台机器）；
 - 日志 `%LOCALAPPDATA%\OPC\logs\opc.jsonl`；缓存 `%LOCALAPPDATA%\OPC\cache\`；待重传队列 `%LOCALAPPDATA%\OPC\queue\pending.jsonl`。
 
 任何项目仓库都不会产生 OPC 文件；仓库名从 `git remote get-url origin` 自动读取，读不到时回落到目录名。
@@ -48,14 +48,14 @@ powershell -ExecutionPolicy Bypass -File D:\Projects\myopc\bridge\install.ps1
 ```
 
 - `projects` 是本机路径 → 仓库标识的映射，用于没有 git remote 的项目（最长匹配优先）。
-- `machine` 留空时使用 `machine.json` 里的本机身份。
+- `machine` 留空时使用 `machine.json` 里的标识；它只标注记录来源，不做跨机器同步或验证。
 - 凭据只放在这个文件里，不进入任何仓库；回流内容里出现的 Token / 密码会在本地先脱敏再上传。
 
 ## 行为
 
 - 只依赖 Node 内置模块，不需要在项目里安装依赖。
 - `context` 与 `bootstrap` 都是“宁可不用”的：没有相关知识时返回 `{"used":false,"reason":"no_relevant_knowledge"}`，没有记录时返回 `reason:"no_records"`。
-- `bootstrap` 结果默认缓存 10 分钟（同仓库 + 分支 + 机器）；`opc result` 成功后清掉该仓库的缓存，需要刷新时加 `--force`。
+- `bootstrap` 结果默认缓存 10 分钟（同仓库 + 分支）；`opc result` 成功后清掉该仓库的缓存，需要刷新时加 `--force`。
 - 回流失败时返回 `{"saved":false,"queued":true,...}` 并把这次提交放进待重传队列；下一次任意命令会补发最多 3 条，每条最多重试 20 次，不无限重试、不阻断开发。
 - 网络失败、服务器不可用、模型未配置都不阻塞开发：命令始终以退出码 0 结束，并返回 `bridge_error` 之类的可读原因。
 - 同一次回流重试带同一个 `submission_id`，服务端按（submission_id, 序号）判重，不会重复写入；更正用 `--supersedes <记录 id>`，旧记录保留历史。
