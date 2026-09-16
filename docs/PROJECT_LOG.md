@@ -335,6 +335,21 @@
 - 视频项目的发行版修复后来从只读检查扩成 `--repair`（补内部包 junction、13 个关键外部依赖与 inter 字体，只补缺失、可重复运行），并在干净 TEMP 重装 `@hypit/hypit@0.1.9` 的场景验证通过；原阻塞记录由新记录 `supersedes` 关闭，`bootstrap` 不再列出它。
 - 顺带修正恢复摘要：已被替代的记录不再贡献"下一步"，项目更新时间取最新有效记录（原来的实现会把作废记录的下一步继续列出来）。
 
+### 2026-09-17 OPC V0.2 验收修复（提交 2aa4274，bridge 0.2.1）
+
+**修复**
+
+- 总开关统一覆盖所有网络操作：`result` / `candidates` / 队列补发 / `doctor` 健康检查在 `enabled:false` 时都不访问服务器，回流不入队，返回 `bridge_disabled`。
+- bootstrap 缓存键纳入当前提交与 `limit`；队列成功补发 result 后清掉该仓库的恢复缓存。
+- 路径映射按目录边界匹配（video 命中、video-other 不命中，最长有效目录优先）。
+- 恢复摘要的当前阶段 / 阻塞 / 下一步只取当前分支范围；其他分支记录留在 recent 作带来源的参考；nextSteps 带 `branch` + `scope`；无分支项目（video）不受影响。
+
+**验证**
+
+- `npm test` 85 项（新增：路径边界、总开关关闭、缓存键随提交变化、补发清缓存、分支范围恢复、无分支恢复）；lint / tsc / build 通过。
+- 本机实测：`OPC_ENABLED=false` 下 `result` 返回 `bridge_disabled` 且队列 0→0；`doctor` 不访问服务器；待重传项在关闭时 attempts 保持 1。
+- 服务器实测（release=2aa4274）：video-project 与 kioooice/MYOPC 的 bootstrap 正常返回，nextSteps 带 scope；`acceptance/cache-flush` 上验证补发后缓存清空。
+
 **未解决 / 未验证**
 
 - 真实"新对话"接续没跑通：委派创建的任务 `01a0aa96-664b-7450-b786-23e383c04b3a` 两次都在第一次请求就失败——通过应用委派创建的任务会往新会话注入没有 `call_id` 的 `function_call_output`（`name: create_thread` / `send_message_to_thread`），DeepSeek `/v1/responses` 校验器直接返回 400 `missing field call_id`（已用最小请求复现：无 `call_id` → 400；带 `call_id` → 另一条校验错误）。普通会话里真实工具调用的 `function_call_output` 都带 `call_id`，所以只有委派创建的任务会失败。已在 STATUS / TASKS 里给出改为"界面正常新建任务"的最短验收指令。

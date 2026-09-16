@@ -32,6 +32,14 @@
 - 页面用 Playwright 实测：项目详情「最近进展」与空间页候选处置（保存后待整理 0 / 最近处理 1）。
 - 业务仓库没有产生 OPC 文件；配置、缓存、日志与队列都在 `%LOCALAPPDATA%\OPC\`。
 
+### 验收修复（2026-09-17，提交 2aa4274 / bridge 0.2.1）
+
+- Bridge 总开关统一覆盖所有网络操作：`enabled:false` 时 `result` / `candidates` / 队列补发 / `doctor` 健康检查都不访问服务器，回流也不会新增待上传内容，返回明确的 `bridge_disabled`（本机实测：待重传项的 attempts 保持 1，说明没有发起补发）。
+- bootstrap 缓存键纳入当前提交与 `limit`：同分支换提交会重新获取并重算版本提示；待重传队列成功补发 result 后清掉该项目的恢复缓存（实测：补发 sent=1 后 `cache/bootstrap.json` 变为 `{}`）。
+- 路径映射改为目录边界匹配：`D:\Projects\video` 及其子目录命中，`D:\Projects\video-other` 不命中，最长有效目录优先。
+- 恢复摘要按分支范围筛选：当前阶段 / 阻塞 / 下一步只取当前分支范围（无分支记录仍算当前范围，video 照常恢复）；其他分支记录保留在 recent 并带来源标注，nextSteps 现在带 `branch` 与 `scope`（current-branch / unversioned / branch-unknown）。
+- 提交 `2aa4274`；`npm test` 85 项、lint、tsc、build 通过；本机 CLI 已重装为 0.2.1（与仓库副本哈希一致），服务器已部署到 2aa4274（`release=2aa4274`，部署前备份 integrity ok）。
+
 ### 未验证
 
 - 真实"新对话"接续：委派创建的任务 `01a0aa96-664b-7450-b786-23e383c04b3a` 两次都在第一次请求就失败——通过应用委派创建的任务会往新会话注入没有 `call_id` 的 `function_call_output`（`name: create_thread` / `send_message_to_thread`），DeepSeek `/v1/responses` 校验器直接返回 400 `missing field call_id`（已用最小请求复现：无 `call_id` → 400；带 `call_id` → 另一条校验错误）。普通会话里真实工具调用的 `function_call_output` 都带 `call_id`，所以只有委派创建的任务会失败。这不是 OPC 的问题。最短验收指令：在 video 项目**用界面正常新建任务**（不要用委派），输入「先 `opc bootstrap` 恢复项目状态，核对本地文件后继续记录里的下一步」。
