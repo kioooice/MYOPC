@@ -64,4 +64,6 @@ powershell -ExecutionPolicy Bypass -File D:\Projects\myopc\bridge\install.ps1
 
 ## 全局规则
 
+新项目 / 新工具第一次接入时（包括用本机路径映射接入的），Codex 会自己检查知识仓库有没有对应条目；没有就起草一条最小条目（`projects/<id>.md` 或 `tools/<id>.md`，状态 `待核对`，`sources.repo` 写 OPC 身份）并提交推送，然后一句话告知——不需要用户在对话里手动要求。内容只写已知事实，其余留给后续整理会话补充。
+
 Codex 的全局 `~/.codex/AGENTS.md` 里已加入对应约定：新会话进入已识别项目时先 `opc bootstrap` 恢复一次并核对本地事实；有历史经验影响做法时调用 `opc context`；关键阶段（决定、完成、环境变化、发现、阻塞）用 `opc result --event ...` 回流；普通改字、重复测试和每次工具调用不回流；同一会话不反复 bootstrap。
