@@ -48,7 +48,7 @@ Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知�
 
 目标是让日常开发保持「打开项目 → 给 Codex 任务 → 正常开发」，由全局 AGENTS.md 约定调用本地 CLI。V0.2 在原有 context / result 上增加阶段回流与新会话恢复，不改变 V0 的调用方式。
 
-1. `opc bootstrap`：POST 到 `/api/v1/agent/bootstrap`，带上仓库、分支、提交与未提交标记（机器字段存在，但只作为来源标注）。服务端只做筛选与组装——按分支相关性分层、再按时间排序，标注其他分支 / 更早提交的记录，列出未解除的阻塞与下一步，同一主题出现不同记录时显式列出冲突而不裁决。返回有长度上限，记录 ID 可用 `GET /api/v1/agent/events/:id` 继续读取。这一步不调用模型。适用范围是「本机 + 服务器」，不做跨机器使用。
+1. `opc bootstrap`：POST 到 `/api/v1/agent/bootstrap`，带上仓库、分支、提交与未提交标记（机器字段存在，但只作为来源标注）。服务端只做筛选与组装——按分支相关性分层、再按时间排序，标注其他分支 / 更早提交的记录，列出未解除的阻塞与下一步，同一主题出现不同记录时显式列出冲突而不裁决。返回有长度上限，记录 ID 可用 `GET /api/v1/agent/events/:id` 继续读取。这一步不调用模型。适用范围：开发只在本机；其他机器只用浏览器查看 OPC 页面（不装 bridge、不在那里 bootstrap 或回流）。
 2. `opc context --task "..."`：Bridge 从 `git remote get-url origin` 解析 `owner/repo`（读不到时回落到目录名，也可用 config 的 `projects` 做本机路径映射），POST 到 `/api/v1/agent/context`。服务端先过两道 Gate——仓库能否识别、近期是否重复调用——再把全部 visible notes 的标题 / 分类 / 标签 / 一句话说明 / 摘要交给模型挑 0~3 条，相关性分数低于阈值直接丢弃；命中后才读取正文（最多 4000 字）返回。任何失败都返回 `used:false` 加可读 reason，不阻塞开发。
 3. `opc result`：POST 到 `/api/v1/agent/result`，一次回流可以只带阶段事件（`--event decision|progress|environment|finding|blocker|plan`），也可以带完整的任务结果（`--change / --validation / --finding / --knowledge-used`）。事件写入 `project_events`，批次写入 `agent_task_results`。
    - 状态语义：`planned`（计划）、`reported`（执行方报告）、`verified`（附验证依据）、`blocked`、`superseded`；`verified` 必须有验证方式或证据，否则按报告记录，服务器不会替执行方升级状态。

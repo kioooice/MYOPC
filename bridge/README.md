@@ -34,6 +34,8 @@ powershell -ExecutionPolicy Bypass -File D:\Projects\myopc\bridge\install.ps1
 
 任何项目仓库都不会产生 OPC 文件；仓库名从 `git remote get-url origin` 自动读取，读不到时回落到目录名。
 
+其他机器不需要安装：查看直接开 `http://124.222.190.89:3010`（Basic Auth），页面读的是服务器上同一份状态；开发只在本机进行。
+
 ## 配置
 
 ```json
