@@ -75,4 +75,4 @@
 
 未验证项：
 
-- 真实"新对话"接续：创建的 Codex 任务 `01a0aa96-664b-7450-b786-23e383c04b3a`（video 项目）两次都在本机 CC Switch 代理层失败（DeepSeek `/responses` HTTP 400 `missing field call_id`），所以没有真正跑通"新会话自己恢复并接续"。最短验收指令见 STATUS 的「未验证」。
+- 真实"新对话"接续：委派创建的 Codex 任务 `01a0aa96-664b-7450-b786-23e383c04b3a`（video 项目）两次都在第一次请求就失败——通过应用委派创建的任务会往新会话注入没有 `call_id` 的 `function_call_output`（`name: create_thread` / `send_message_to_thread`），DeepSeek `/v1/responses` 校验器直接返回 400 `missing field call_id`（已用最小请求复现：无 `call_id` → 400；带 `call_id` → 另一条校验错误）。普通会话里真实工具调用的 `function_call_output` 都带 `call_id`，所以只有委派创建的任务会失败。因此没有跑通"新会话自己恢复并接续"；改用界面正常新建任务即可绕过，最短验收指令见 STATUS 的「未验证」。

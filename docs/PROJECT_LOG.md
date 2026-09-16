@@ -335,5 +335,5 @@
 
 **未解决 / 未验证**
 
-- 真实"新对话"接续没跑通：Codex 任务 `01a0aa96-664b-7450-b786-23e383c04b3a` 两次都在本机 CC Switch 代理层失败（DeepSeek `/responses` HTTP 400 `missing field call_id`）。已在 STATUS 里给出最短验收指令。
+- 真实"新对话"接续没跑通：委派创建的任务 `01a0aa96-664b-7450-b786-23e383c04b3a` 两次都在第一次请求就失败——通过应用委派创建的任务会往新会话注入没有 `call_id` 的 `function_call_output`（`name: create_thread` / `send_message_to_thread`），DeepSeek `/v1/responses` 校验器直接返回 400 `missing field call_id`（已用最小请求复现：无 `call_id` → 400；带 `call_id` → 另一条校验错误）。普通会话里真实工具调用的 `function_call_output` 都带 `call_id`，所以只有委派创建的任务会失败。已在 STATUS / TASKS 里给出改为"界面正常新建任务"的最短验收指令。
 - 第二台真实机器、候选处置的其余状态（已新增 / 暂存 / 舍弃）页面路径、自动修复脚本仍未验证或未实现。

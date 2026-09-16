@@ -3,7 +3,7 @@
 按实际需求选取任务，不是必须顺序通过的阶段关卡。
 
 - [x] OPC V0.2 部署与真实视频项目验收：现场检查 → 阶段回流 → 恢复 → 核对本地 → 接续任务（见 [开发计划](docs/DELIVERY_PLAN.md)）。
-- [ ] 真实新对话接续：本机 CC Switch 代理报 DeepSeek `/responses` HTTP 400 `missing field call_id`，代理修好后在 video 项目新开一个任务，输入「先 `opc bootstrap` 恢复项目状态，核对本地文件后继续记录里的下一步」。
+- [ ] 真实新对话接续：委派创建的任务会被注入没有 `call_id` 的 `function_call_output`，DeepSeek `/v1/responses` 直接 400 `missing field call_id`；改用界面正常新建任务，输入「先 `opc bootstrap` 恢复项目状态，核对本地文件后继续记录里的下一步」。
 - [ ] 把 `scripts/check-distribution.mjs` 从只读检查扩成可重跑的修复脚本（自动补内部包 junction 与外部依赖）。
 - [ ] 页面实测：项目详情「最近进展」区块与空间页候选经验处置（含窄屏）。
 - [ ] 用第二台真实机器验证 bootstrap 的机器边界（其他机器验证过的配置不代表本机已就绪）。

@@ -34,7 +34,7 @@
 
 ### 未验证
 
-- 真实"新对话"接续：Codex 任务 `01a0aa96-664b-7450-b786-23e383c04b3a` 两次都在本机 CC Switch 代理层失败（DeepSeek `/responses` HTTP 400 `missing field call_id`），因此"新会话自己恢复并接续"没有真正跑通。最短验收指令：在 video 项目新开一个 Codex 任务，输入「先 `opc bootstrap` 恢复项目状态，核对本地文件后继续记录里的下一步」。
+- 真实"新对话"接续：委派创建的任务 `01a0aa96-664b-7450-b786-23e383c04b3a` 两次都在第一次请求就失败——通过应用委派创建的任务会往新会话注入没有 `call_id` 的 `function_call_output`（`name: create_thread` / `send_message_to_thread`），DeepSeek `/v1/responses` 校验器直接返回 400 `missing field call_id`（已用最小请求复现：无 `call_id` → 400；带 `call_id` → 另一条校验错误）。普通会话里真实工具调用的 `function_call_output` 都带 `call_id`，所以只有委派创建的任务会失败。这不是 OPC 的问题。最短验收指令：在 video 项目**用界面正常新建任务**（不要用委派），输入「先 `opc bootstrap` 恢复项目状态，核对本地文件后继续记录里的下一步」。
 - 多机器场景只验证了标记与筛选逻辑，没有第二台真实机器。
 - 候选处置的其它状态（已新增 / 暂存 / 舍弃）只在测试里覆盖，页面只实测了"已合并"。
 - 自动修复脚本（而不只是检查脚本）仍未写。
