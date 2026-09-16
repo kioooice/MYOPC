@@ -1,5 +1,35 @@
 # 当前状态
 
+## 2026-09-16 OPC V0.2（项目进展即时回流 + 新会话恢复）
+
+日常开发不用再手动维护交接文件：有意义的阶段把关键进展回流到 OPC，新对话进入项目时先恢复一次项目状态，再核对本地事实继续。
+
+### 已实现
+
+- 阶段事件：`project_events`（migration 13）保存类型（plan / progress / decision / environment / finding / blocker）、内容、理由、状态、验证方式、证据、下一步、机器 / 分支 / 提交 / 未提交标记，以及 `supersedes_id / superseded_by` 更正关系。
+- `opc result` 扩展：一次回流可以带多个 `--event`，也可以继续用原来的 `--task/--change/--validation/--finding/--knowledge-used`；`agent_task_results` 增加 `submission_id / machine / branch / commit_sha / dirty / event_count`，同一次回流重试按（submission_id, 序号）判重，不重复写入。
+- 状态语义：`planned / reported / verified / blocked / superseded`。标记 `verified` 需要验证方式或证据，否则按执行方报告记录；服务器不会自动升级状态。
+- `opc bootstrap`：新增 `POST /api/v1/agent/bootstrap`，按仓库 + 分支 + 机器 + 提交筛选并组装恢复摘要（阶段、最近记录、决定与理由、环境验证、阻塞、下一步、冲突、记录 ID），结果有长度上限；`GET /api/v1/agent/events/:id` 读取单条记录详情。
+- 模型边界：只回流事件时不调用模型；客户端已提交总结或候选经验时不调用模型；知识阅读说明与知识相关性判断保持原样。恢复摘要在服务端是纯筛选与组装。
+- 凭据边界：Bridge 与服务器两侧都做一次脱敏，上传载荷不出现 Token / 密码原文；不读取配置文件整体，不要求上传会话、日志或代码。
+- 候选经验处置：`POST /api/v1/knowledge/candidates/:id/resolve` + `opc candidates`，状态为已合并 / 已新增 / 暂存 / 舍弃，记录理由、对应条目与知识仓库提交；处理后移出待整理列表，历史保留。
+- Bridge：新增 `bootstrap` / `candidates` 命令、机器身份（`%LOCALAPPDATA%\OPC\machine.json`）、本机路径映射（config 的 `projects`）、待重传队列（`queue\pending.jsonl`，每条最多 20 次、每次命令最多补发 3 条）与本地脱敏。
+- 页面：项目详情新增「最近进展」（阶段、更新时间、关键事件、环境验证、阻塞、下一步，证据可展开）；空间页的知识复用面板可以就地处置候选经验并查看已处理记录。
+- 全局规则：`~/.codex/AGENTS.md` 的 OPC 段落加入「新会话先 `opc bootstrap` 恢复一次并核对本地事实」「关键阶段用 `opc result --event` 回流」「普通改动不回流」「同一会话不反复 bootstrap」。
+
+### 已验证（本地，2026-09-16）
+
+- `npm test` 79 项通过（新增 18 项：事件保存与去重、状态降级、脱敏、更正历史、bootstrap 分支 / 机器 / 提交筛选与冲突、事件-only 不调用模型、候选处置、Bridge 参数 / 脱敏 / 机器身份）。
+- `npm run lint`、`npx tsc --noEmit`、`npm run build` 通过。
+- 本地实例（127.0.0.1:3212，独立数据目录）实测：`opc bootstrap` 无记录时返回 `no_records`；`opc result` 写入 2 条事件（1 verified + 1 reported）后，`opc bootstrap` 返回阶段、决定、下一步与记录 ID；同一次 `submission_id` 重试不重复写入。
+
+### 未验证
+
+- 真实视频项目的「阶段回流 → 新对话恢复 → 核对本地 → 接续任务」验收（部署后进行）。
+- 多机器场景只验证了标记与筛选逻辑，没有第二台真实机器。
+- 页面候选处置与最近进展区块的浏览器实测。
+
+
 ## 2026-09-15 开发知识复用 V0（context / result）
 
 日常开发保持「打开项目 → 给 Codex 任务 → 正常开发」，在后台按需取用 OPC 历史知识并回流结果。

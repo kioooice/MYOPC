@@ -3,6 +3,15 @@ import { getDb } from "../db";
 import { callChatModel, getModelConfig, type ModelConfig } from "./model";
 import { KnowledgeError } from "./repo";
 import { getKnowledgeEntry, listKnowledgeEntries, listReadingNotes } from "./store";
+import {
+  listProjectEvents,
+  normalizeProjectEvents,
+  redactText,
+  saveProjectEvents,
+  type ProjectEventRecord,
+  type ProjectEventStatus,
+  type ProjectEventType,
+} from "./progress";
 
 // 开发知识复用 V0：只做「按需取用 + 结果回流」，不引入向量检索，也不自动改知识仓库。
 const MAX_CONTEXT_ITEMS = 3;
@@ -71,22 +80,36 @@ export type ReuseUsageView = {
   lastUsedAt: string;
 };
 
+export type ReuseCandidateResolution = {
+  id: string;
+  title: string;
+  status: string;
+  note: string | null;
+  entryId: string | null;
+  knowledgeCommit: string | null;
+  resolvedAt: string | null;
+  repository: string;
+};
+
 export type ReuseOverview = {
-  counts: { calls: number; usedCalls: number; results: number; pendingCandidates: number };
+  counts: { calls: number; usedCalls: number; results: number; pendingCandidates: number; resolvedCandidates: number };
   recentCalls: ReuseCallView[];
   candidates: ReuseCandidateView[];
+  resolvedCandidates: ReuseCandidateResolution[];
   usage: ReuseUsageView[];
 };
 
 type ResultRow = {
   id: string; repository: string; task: string; outcome: string; changes_json: string; validation_json: string;
   findings_json: string; knowledge_used_json: string; summary: string; reusable: number; candidate_count: number;
-  model: string | null; error: string | null; created_at: string;
+  model: string | null; error: string | null; created_at: string; submission_id: string | null;
+  machine: string | null; branch: string | null; commit_sha: string | null; dirty: number; event_count: number;
 };
 
 type CandidateRow = {
   id: string; title: string; summary: string; evidence: string; suggestion: string; repository: string;
   task_result_id: string | null; related_entry_ids_json: string; status: string; created_at: string; updated_at: string;
+  resolution_note: string | null; resolved_entry_id: string | null; knowledge_commit: string | null; resolved_at: string | null;
 };
 
 function nowIso() {
@@ -336,46 +359,146 @@ function buildResultPrompt(input: { repository: string; task: string; outcome: s
   ].join("\n");
 }
 
+export type RecordedEventView = { id: string; type: ProjectEventType; title: string; status: ProjectEventStatus };
+
 export type RecordTaskResultResponse = {
   saved: boolean;
   resultId: string;
   summary: string;
   reusable: boolean;
-  extraction: "model" | "skipped_no_model" | "failed";
+  extraction: "model" | "provided" | "skipped_events_only" | "skipped_no_model" | "failed" | "deduped";
   error: string | null;
   knowledgeUsed: Array<{ id: string; title: string; effect: ReuseEffect; note: string }>;
   candidates: ReuseCandidateView[];
+  /** 本次回流写入的阶段事件（V0.2）；没有事件时为空数组。 */
+  events: RecordedEventView[];
+  /** 同一次回流重试命中已有记录时为 true，没有重复写入。 */
+  deduped: boolean;
+  redactions: number;
+  notes: string[];
 };
 
+type CandidateDraft = { title: string; summary: string; evidence: string; suggestion: string; relatedEntryIds: string[] };
+
+function redactList(value: unknown, limit: number) {
+  if (!Array.isArray(value)) return { items: [] as string[], redacted: 0 };
+  const items: string[] = [];
+  let redacted = 0;
+  for (const raw of value) {
+    const result = redactText(text(raw, MAX_FIELD_CHARS * 2));
+    redacted += result.redacted;
+    const item = result.text.slice(0, MAX_FIELD_CHARS);
+    if (item) items.push(item);
+    if (items.length >= limit) break;
+  }
+  return { items, redacted };
+}
+
+function providedCandidates(value: unknown): CandidateDraft[] {
+  if (!Array.isArray(value)) return [];
+  const drafts: CandidateDraft[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const record = raw as Record<string, unknown>;
+    const title = text(record.title, 120);
+    if (!title) continue;
+    drafts.push({
+      title,
+      summary: text(record.summary, 1200),
+      evidence: text(record.evidence, 600),
+      suggestion: text(record.suggestion, 300),
+      relatedEntryIds: textList(record.related_entry_ids ?? record.relatedEntryIds, 6, 120),
+    });
+    if (drafts.length >= MAX_CANDIDATES) break;
+  }
+  return drafts;
+}
+
+function recordedEventViews(rows: ProjectEventRecord[]): RecordedEventView[] {
+  return rows.slice(0, 20).map((row) => ({ id: row.id, type: row.eventType, title: row.title, status: row.status }));
+}
+
+function dedupedResponse(row: ResultRow): RecordTaskResultResponse {
+  const events = listProjectEvents(row.repository, 400).filter((event) => event.taskResultId === row.id);
+  return {
+    saved: true,
+    resultId: row.id,
+    summary: row.summary,
+    reusable: row.reusable === 1,
+    extraction: "deduped",
+    error: null,
+    knowledgeUsed: parseJson<Array<{ id: string; title: string; effect: ReuseEffect; note: string }>>(row.knowledge_used_json, []),
+    candidates: [],
+    events: recordedEventViews(events),
+    deduped: true,
+    redactions: 0,
+    notes: ["同一次回流已保存过，未重复写入"],
+  };
+}
+
+/**
+ * 保存一次回流：任务级结果（沿用 V0）+ 阶段事件（V0.2）。
+ * 客户端已经给出总结或候选经验时不再调用服务器模型；模型只用于整理没有自带总结的任务结果。
+ */
 export async function recordTaskResult(input: Record<string, unknown> = {}): Promise<RecordTaskResultResponse> {
   const repository = text(input.repository, 200) || "unknown";
-  const task = text(input.task, 2000);
-  if (!normalizedTask(task)) throw new KnowledgeError("task_required", "缺少 task");
+  const taskField = redactText(text(input.task, 2000));
+  const task = taskField.text;
+  const submissionId = text(input.submission_id ?? input.submissionId, 120) || null;
+  const machine = text(input.machine, 120) || null;
+  const branch = text(input.branch, 200) || null;
+  const commit = text(input.commit ?? input.commit_sha, 64) || null;
+  const dirty = input.dirty === true || input.dirty === 1 || input.dirty === "true";
   const outcome = text(input.outcome, 60) || "unknown";
-  const changes = textList(input.changes, 20);
-  const validation = textList(input.validation, 20);
-  const findings = textList(input.findings, 20);
-  const used = applyEffectiveness(normalizeKnowledgeUsed(input.knowledge_used ?? input.knowledgeUsed), input.knowledge_effectiveness ?? input.knowledgeEffectiveness);
+  const changes = redactList(input.changes, 20);
+  const validation = redactList(input.validation, 20);
+  const findings = redactList(input.findings, 20);
+  const normalizedEvents = normalizeProjectEvents(input.events, {});
+  const redactions = taskField.redacted + changes.redacted + validation.redacted + findings.redacted + normalizedEvents.redacted;
+  if (!normalizedTask(task) && normalizedEvents.events.length === 0) throw new KnowledgeError("task_required", "缺少 task");
 
+  const db = getDb();
+  if (submissionId) {
+    const existing = db.prepare("SELECT * FROM agent_task_results WHERE submission_id=?").get(submissionId) as ResultRow | undefined;
+    if (existing) return dedupedResponse(existing);
+  }
+
+  const used = applyEffectiveness(normalizeKnowledgeUsed(input.knowledge_used ?? input.knowledgeUsed), input.knowledge_effectiveness ?? input.knowledgeEffectiveness);
   const id = nextTaskResultId();
   const createdAt = nowIso();
-  getDb().prepare(`INSERT INTO agent_task_results(id, repository, task, outcome, changes_json, validation_json, findings_json, knowledge_used_json, summary, reusable, candidate_count, model, error, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 0, 0, NULL, NULL, ?)`)
-    .run(id, repository, task, outcome, JSON.stringify(changes), JSON.stringify(validation), JSON.stringify(findings), JSON.stringify(used), createdAt);
+  db.prepare(`INSERT INTO agent_task_results(id, repository, task, outcome, changes_json, validation_json, findings_json, knowledge_used_json, summary, reusable, candidate_count, model, error, created_at, submission_id, machine, branch, commit_sha, dirty, event_count)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 0, 0, NULL, NULL, ?, ?, ?, ?, ?, ?, 0)`)
+    .run(id, repository, task, outcome, JSON.stringify(changes.items), JSON.stringify(validation.items), JSON.stringify(findings.items), JSON.stringify(used), createdAt, submissionId, machine, branch, commit, dirty ? 1 : 0);
+
+  const eventResult = saveProjectEvents({
+    repository,
+    events: normalizedEvents.events,
+    taskResultId: id,
+    submissionId,
+    task,
+    redacted: normalizedEvents.redacted,
+  });
+  const notes = [...normalizedEvents.notes, ...eventResult.notes];
+  if (redactions > 0) notes.push(`上传内容里有 ${redactions} 处疑似凭据，已按脱敏后的文本保存`);
 
   const config = getModelConfig();
-  let summary = "";
+  const provided = providedCandidates(input.candidates);
+  const providedSummary = text(input.summary, 200);
+  const hasProvided = provided.length > 0 || Boolean(providedSummary);
+  // 只回流阶段事件时不调用模型：事件接收与保存默认不过模型。
+  const eventOnly = normalizedEvents.events.length > 0 && changes.items.length === 0 && validation.items.length === 0 && findings.items.length === 0 && used.length === 0;
+  let summary = providedSummary;
   let model: string | null = null;
   let error: string | null = null;
-  let extraction: RecordTaskResultResponse["extraction"] = "skipped_no_model";
-  let candidates: Array<{ title: string; summary: string; evidence: string; suggestion: string; relatedEntryIds: string[] }> = [];
+  // 客户端已经给出总结或候选经验时，服务器不再调用模型改写现场事实。
+  let extraction: RecordTaskResultResponse["extraction"] = hasProvided ? "provided" : eventOnly ? "skipped_events_only" : config ? "model" : "skipped_no_model";
+  let candidates: CandidateDraft[] = provided;
 
-  if (config) {
-    extraction = "failed";
+  if (!hasProvided && !eventOnly && config) {
     try {
       const response = await callModelWithRetry(config, [
         { role: "system", content: "你只输出 JSON，用于整理开发任务结果并判断是否需要沉淀候选经验。" },
-        { role: "user", content: buildResultPrompt({ repository, task, outcome, changes, validation, findings, used }) },
+        { role: "user", content: buildResultPrompt({ repository, task, outcome, changes: changes.items, validation: validation.items, findings: findings.items, used }) },
       ]);
       model = response.model;
       const parsed = parseModelJson(response.content);
@@ -397,29 +520,81 @@ export async function recordTaskResult(input: Record<string, unknown> = {}): Pro
             relatedEntryIds: textList(record.related_entry_ids, 6, 120),
           };
         })
-        .filter((item): item is { title: string; summary: string; evidence: string; suggestion: string; relatedEntryIds: string[] } => item !== null)
+        .filter((item): item is CandidateDraft => item !== null)
         .slice(0, MAX_CANDIDATES);
       extraction = "model";
     } catch (cause) {
       error = cause instanceof Error ? cause.message : "结果提炼失败";
+      extraction = "failed";
+      candidates = [];
     }
-  } else {
+  } else if (extraction === "skipped_no_model") {
     error = "未配置模型：已保存任务结果，未判定知识效果与生成候选经验";
+  } else if (extraction === "skipped_events_only") {
+    notes.push("只回流阶段事件，未调用服务器模型");
   }
 
   const stored = candidates.map((candidate) => {
     const candidateId = `cand-${randomUUID()}`;
-    getDb().prepare(`INSERT INTO knowledge_candidates(id, title, summary, evidence, suggestion, repository, task_result_id, related_entry_ids_json, status, created_at, updated_at)
+    db.prepare(`INSERT INTO knowledge_candidates(id, title, summary, evidence, suggestion, repository, task_result_id, related_entry_ids_json, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`)
       .run(candidateId, candidate.title, candidate.summary, candidate.evidence, candidate.suggestion, repository, id, JSON.stringify(candidate.relatedEntryIds), createdAt, createdAt);
     return { id: candidateId, title: candidate.title, summary: candidate.summary, evidence: candidate.evidence, suggestion: candidate.suggestion, repository, createdAt };
   });
 
-  getDb().prepare("UPDATE agent_task_results SET knowledge_used_json=?, summary=?, reusable=?, candidate_count=?, model=?, error=? WHERE id=?")
-    .run(JSON.stringify(used), summary, stored.length > 0 ? 1 : 0, stored.length, model, error, id);
-  recordAgentEvent(id, "agent.result.recorded", { repository, task, outcome, usedIds: used.map((item) => item.id), effects: used.map((item) => item.effect), candidateIds: stored.map((item) => item.id) });
+  db.prepare("UPDATE agent_task_results SET knowledge_used_json=?, summary=?, reusable=?, candidate_count=?, model=?, error=?, event_count=? WHERE id=?")
+    .run(JSON.stringify(used), summary, stored.length > 0 ? 1 : 0, stored.length, model, error, eventResult.saved.length, id);
+  recordAgentEvent(id, "agent.result.recorded", {
+    repository,
+    task,
+    outcome,
+    usedIds: used.map((item) => item.id),
+    effects: used.map((item) => item.effect),
+    candidateIds: stored.map((item) => item.id),
+    eventIds: eventResult.saved.map((item) => item.id),
+    eventTypes: eventResult.saved.map((item) => item.eventType),
+    machine,
+    branch,
+    commit,
+    dirty,
+  });
 
-  return { saved: true, resultId: id, summary, reusable: stored.length > 0, extraction, error, knowledgeUsed: used, candidates: stored };
+  return {
+    saved: true,
+    resultId: id,
+    summary,
+    reusable: stored.length > 0,
+    extraction,
+    error,
+    knowledgeUsed: used,
+    candidates: stored,
+    events: recordedEventViews(eventResult.saved),
+    deduped: false,
+    redactions,
+    notes,
+  };
+}
+
+export const CANDIDATE_STATUSES = ["merged", "added", "hold", "discarded"] as const;
+export type CandidateStatus = (typeof CANDIDATE_STATUSES)[number];
+
+/** 整理会话的候选处置：保留理由、对应条目与适用的知识仓库提交；处理过的项不再出现在待整理列表。 */
+export function resolveKnowledgeCandidate(input: { id?: unknown; status?: unknown; note?: unknown; entryId?: unknown; knowledgeCommit?: unknown; actor?: unknown } = {}) {
+  const id = text(input.id, 120);
+  if (!id) throw new KnowledgeError("candidate_id_required", "缺少候选经验 id");
+  const status = text(input.status, 20);
+  if (!(CANDIDATE_STATUSES as readonly string[]).includes(status)) throw new KnowledgeError("candidate_status_invalid", "状态必须是 merged / added / hold / discarded");
+  const note = text(input.note, 600);
+  if (!note) throw new KnowledgeError("candidate_note_required", "需要记录处理理由");
+  const row = getDb().prepare("SELECT * FROM knowledge_candidates WHERE id=?").get(id) as CandidateRow | undefined;
+  if (!row) throw new KnowledgeError("candidate_not_found", "候选经验不存在");
+  const entryId = text(input.entryId, 120) || null;
+  const knowledgeCommit = text(input.knowledgeCommit, 64) || null;
+  const resolvedAt = nowIso();
+  getDb().prepare("UPDATE knowledge_candidates SET status=?, resolution_note=?, resolved_entry_id=?, knowledge_commit=?, resolved_at=?, updated_at=? WHERE id=?")
+    .run(status, note, entryId, knowledgeCommit, resolvedAt, resolvedAt, id);
+  recordAgentEvent(id, "agent.candidate.resolved", { repository: row.repository, status, entryId, knowledgeCommit, actor: text(input.actor, 60) || "codex" });
+  return { resolved: true, id, status, note, entryId, knowledgeCommit, resolvedAt };
 }
 
 export function getReuseOverview(limit = 8): ReuseOverview {
@@ -428,6 +603,7 @@ export function getReuseOverview(limit = 8): ReuseOverview {
     .all() as Array<{ entity_id: string; payload_json: string; created_at: string }>;
   const results = db.prepare("SELECT * FROM agent_task_results ORDER BY created_at DESC LIMIT 200").all() as ResultRow[];
   const candidates = db.prepare("SELECT * FROM knowledge_candidates WHERE status='pending' ORDER BY created_at DESC LIMIT 40").all() as CandidateRow[];
+  const resolvedCandidates = db.prepare("SELECT * FROM knowledge_candidates WHERE status <> 'pending' ORDER BY resolved_at DESC LIMIT 20").all() as CandidateRow[];
 
   const outcomeByKey = new Map<string, string>();
   for (const row of results) {
@@ -478,6 +654,7 @@ export function getReuseOverview(limit = 8): ReuseOverview {
       usedCalls: calls.filter((row) => parseJson<{ used?: boolean }>(row.payload_json, {}).used === true).length,
       results: results.length,
       pendingCandidates: candidates.length,
+      resolvedCandidates: resolvedCandidates.length,
     },
     recentCalls: recentCalls.slice(0, limit),
     candidates: candidates.slice(0, limit).map((row) => ({
@@ -488,6 +665,16 @@ export function getReuseOverview(limit = 8): ReuseOverview {
       suggestion: row.suggestion,
       repository: row.repository,
       createdAt: row.created_at,
+    })),
+    resolvedCandidates: resolvedCandidates.slice(0, limit).map((row) => ({
+      id: row.id,
+      title: row.title,
+      status: row.status,
+      note: row.resolution_note,
+      entryId: row.resolved_entry_id,
+      knowledgeCommit: row.knowledge_commit,
+      resolvedAt: row.resolved_at,
+      repository: row.repository,
     })),
     usage: [...usageMap.values()].sort((left, right) => right.usedCount - left.usedCount || right.lastUsedAt.localeCompare(left.lastUsedAt)).slice(0, limit),
   };

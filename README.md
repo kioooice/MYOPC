@@ -49,25 +49,35 @@ npm run dev -- --hostname 127.0.0.1
 | POST | /knowledge/notes | 为单个条目生成或重新生成阅读说明（`entry_id`、可选 `force`） |
 | POST | /knowledge/process | 批量加工待处理条目（可选 `limit`，一次最多 10 条） |
 | POST | /agent/context | 开发知识复用：按任务取 0~3 条历史知识（`repository`、`task`、可选 `force`） |
-| POST | /agent/result | 开发知识复用：回流任务结果，必要时形成候选经验 |
-| GET | /knowledge/reuse | 知识复用观察数据：最近调用、候选经验、知识使用情况 |
+| POST | /agent/result | 回流任务结果与阶段事件（决定 / 进展 / 环境 / 发现 / 阻塞），必要时形成候选经验 |
+| POST | /agent/bootstrap | 新会话恢复：按仓库、分支、机器、提交组装项目状态摘要（不调用模型） |
+| GET | /agent/events/:id | 单条项目事件详情 |
+| GET | /knowledge/reuse | 知识复用观察数据：最近调用、待整理与已处理候选经验、知识使用情况 |
+| POST | /knowledge/candidates/:id/resolve | 候选经验处置：已合并 / 已新增 / 暂存 / 舍弃 |
 
 原有的 captures、methods、projects、trials、deliverables、feedback 等接口保持不变，供历史数据和脚本客户端继续使用。
 
-## 开发知识复用（V0）
+## 开发知识复用（V0.2）
 
-日常开发保持原样：**打开项目 → 给 Codex 任务 → 正常开发**。每台电脑安装一次 OPC Bridge 后，Codex 会在真正需要历史经验的开发任务里自动调用：
+日常开发保持原样：**打开项目 → 给 Codex 任务 → 正常开发**。每台电脑安装一次 OPC Bridge 后，Codex 按全局规则调用：
 
 ```sh
-opc context --task "<当前任务>"        # 任务开始前；没有相关知识就返回 no_relevant_knowledge
-opc result  --task "<当前任务>" --outcome success --change "..." --validation "..." --knowledge-used "id1,id2"
+opc bootstrap                          # 新会话进入已识别项目时恢复一次：阶段、决定、环境验证、阻塞、下一步
+opc context --task "<当前任务>"         # 需要历史经验时；没有相关知识就返回 no_relevant_knowledge
+opc result --event decision --title "..." --content "..." --rationale "..."          # 阶段回流
+opc result --event progress --title "..." --content "..." --verification "..." --status verified --next "..."
+opc result --task "<当前任务>" --outcome success --change "..." --validation "..." --knowledge-used "id1,id2"
+opc candidates                         # 整理候选经验
 ```
 
-- 安装：`powershell -ExecutionPolicy Bypass -File bridge/install.ps1`（程序、配置、日志都在 `%LOCALAPPDATA%\OPC\`，项目仓库里不产生任何 OPC 文件）。
+- 安装：`powershell -ExecutionPolicy Bypass -File bridge/install.ps1`（程序、配置、机器身份、日志、待重传队列都在 `%LOCALAPPDATA%\OPC\`，项目仓库里不产生任何 OPC 文件）。
+- 恢复：`bootstrap` 只做筛选与组装，不调用模型；按分支相关性分层再按时间排序，区分「本机已验证」和「其他机器验证，不代表本机已就绪」，记录对应更早提交时会提示核对，同一主题互相冲突时显式列出。恢复后仍要自己核对工作区。
+- 回流：`--event` 一次可以写多条（决定 / 进展 / 环境 / 发现 / 阻塞 / 计划），带机器、分支、提交与未提交标记；重试带同一个 `submission_id` 不会重复写入；更正用 `--supersedes <记录 id>`，旧记录保留历史。只回流事件时不调用服务器模型。
+- 状态：`planned`（计划）/ `reported`（执行方报告）/ `verified`（附验证依据）/ `blocked`（未解决）/ `superseded`（已被替代）。标 verified 必须有验证方式或证据。
 - 取用：先用模型在 notes 池里挑选，相关性低于阈值就不返回；命中后才读取正文，最多 3 条；10 分钟内相同仓库 + 相同任务直接复用上次结果。
-- 回流：结果写入 `agent_task_results`；值得长期保留的内容写入 `knowledge_candidates`，由人后续统一整理进知识仓库，OPC 不自动改 `MYOPC-Knowledge`。
-- 观察：空间页顶部有只读的「知识复用」面板（最近调用 / 候选经验 / 知识使用情况）。
-- 边界：V0 不使用 embedding、向量库、MCP、知识图谱，也不自动 commit 知识仓库。
+- 候选：结果写入 `agent_task_results`，事件写入 `project_events`；值得长期保留的内容进入 `knowledge_candidates`，用 `opc candidates` 或页面标记为已合并 / 已新增 / 暂存 / 舍弃，OPC 不自动改 `MYOPC-Knowledge`。
+- 观察：空间页顶部有「知识复用」面板（最近调用 / 待整理候选 / 已处理记录 / 知识使用情况）；项目详情页有「最近进展」（阶段、关键事件、环境验证、阻塞、下一步，证据可展开）。
+- 边界：不使用 embedding、向量库、MCP、知识图谱；凭据只保存引用名称，不保存原文。
 
 ## 定时同步
 

@@ -13,12 +13,15 @@ type Trial = { id: string; title: string; goal: string; status: string; revision
 type KnowledgeNote = { status: "ready" | "stale" | "failed" | "missing"; stale: boolean; model: string | null; generatedAt: string | null; error: string | null; summary: string | null; brief: string | null; card: string | null };
 type KnowledgeItem = { id: string; kind: string; title: string; summary: string; status: string; tags: string[]; updatedAt: string | null; link: string | null; relPath: string; sourceUrls: string[]; category: string | null; mapType: string | null; note: KnowledgeNote };
 type KnowledgeNoteContent = { summary: string; facts: string[]; decisions: Array<{ title: string; detail: string }>; steps: string[]; conditions: string[]; open_questions: string[]; inferences: string[] };
-type KnowledgeDetail = KnowledgeItem & { body: string; sources: Array<{ label: string; url: string | null }>; related: Array<{ id: string; title: string; kind: string; status: string }>; noteContent: KnowledgeNoteContent | null; stale: boolean; promptVersion: string };
+type KnowledgeDetail = KnowledgeItem & { body: string; sources: Array<{ label: string; url: string | null }>; related: Array<{ id: string; title: string; kind: string; status: string }>; noteContent: KnowledgeNoteContent | null; stale: boolean; promptVersion: string; progress: EntryProgress | null };
 type KnowledgeSync = { status: "ok" | "failed" | "never"; commit: string | null; branch: string | null; message: string | null; entryCount: number; addedCount: number; updatedCount: number; removedCount: number; startedAt: string | null; finishedAt: string | null };
 type ReuseCall = { id: string; repository: string; task: string; usedCount: number; reason: string | null; createdAt: string; outcome: string | null };
 type ReuseCandidate = { id: string; title: string; summary: string; evidence: string; suggestion: string; repository: string; createdAt: string };
 type ReuseUsage = { id: string; title: string; usedCount: number; effective: number; partial: number; ineffective: number; unknown: number; lastUsedAt: string };
-type ReuseOverview = { counts: { calls: number; usedCalls: number; results: number; pendingCandidates: number }; recentCalls: ReuseCall[]; candidates: ReuseCandidate[]; usage: ReuseUsage[] };
+type ReuseCandidateResolution = { id: string; title: string; status: string; note: string | null; entryId: string | null; knowledgeCommit: string | null; resolvedAt: string | null; repository: string };
+type ReuseOverview = { counts: { calls: number; usedCalls: number; results: number; pendingCandidates: number; resolvedCandidates: number }; recentCalls: ReuseCall[]; candidates: ReuseCandidate[]; resolvedCandidates: ReuseCandidateResolution[]; usage: ReuseUsage[] };
+type ProgressRecord = { id: string; type: string; title: string; content: string; rationale: string; status: string; verification: string; evidence: string[]; nextStep: string; machine: string | null; branch: string | null; commit: string | null; dirty: boolean; occurredAt: string; recordedAt: string; sameBranch: boolean | null; sameMachine: boolean | null; sameCommit: boolean | null; note: string | null; taskResultId: string | null; supersedesId: string | null; supersededBy: string | null };
+type EntryProgress = { repositories: string[]; stage: { title: string; status: string; occurredAt: string } | null; updatedAt: string | null; events: ProgressRecord[]; environment: Array<ProgressRecord & { verifiedOnThisMachine: boolean }>; blockers: ProgressRecord[]; nextSteps: string[]; total: number };
 type KnowledgeOverviewResponse = { sync: KnowledgeSync; model: { configured: boolean; model: string | null; baseUrl: string | null }; promptVersion: string; repository: string; directory: string; pendingNotes: number; reuse: ReuseOverview; entries: KnowledgeItem[] };
 type WriteRequest = PendingWrite;
 type View = "overview" | "projects" | "toolbox" | "space" | "maps" | "entry" | "active" | "inbox" | "deliverables";
@@ -29,6 +32,10 @@ const feedbackKindLabel = (kind?: string) => kind === "review" ? "待审阅" : "
 const sourceLabel = (source?: string) => source === "user" ? "用户反馈" : source === "codex" ? "Codex 记录" : source === "system" ? "系统记录" : "反馈";
 const reviewStatusLabel = (status?: string) => status === "accepted" ? "已采用" : status === "needs_revision" ? "需要修改" : "待审阅";
 const noteStatusLabel = (status: string, stale = false) => status === "ready" ? "已有阅读说明" : status === "failed" ? "加工失败" : status === "stale" || stale ? "待更新" : "待生成";
+const progressTypeLabel = (type: string) => ({ plan: "计划", progress: "进展", decision: "决定", environment: "环境", finding: "发现", blocker: "阻塞", correction: "更正" }[type] || type);
+const progressStatusLabel = (status: string) => ({ planned: "计划中", reported: "执行方报告", verified: "附验证依据", blocked: "未解决", superseded: "已被替代" }[status] || status);
+const candidateStatusLabel = (status: string) => ({ merged: "已合并", added: "已新增", hold: "暂存", discarded: "舍弃" }[status] || status);
+const shortDateTime = (value?: string | null) => value ? new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
 const mapTypeLabel = (mapType?: string | null) => mapType === "architecture" ? "架构图" : mapType === "workflow" ? "流程图" : mapType === "decision" ? "判断树" : mapType === "relationship" ? "关系图" : "图谱";
 const RELATED_KIND_META: Record<string, { title: string; badge: string }> = {
   project: { title: "相关项目", badge: "项目" },
@@ -186,6 +193,19 @@ export default function Home() {
     finally { setKnowledgeBusy(false); }
   }
 
+  async function resolveCandidate(id: string, status: string, note: string, entryId: string, commit: string) {
+    setKnowledgeBusy(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/v1/knowledge/candidates/${encodeURIComponent(id)}/resolve`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ status, note, entry_id: entryId, knowledge_commit: commit }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.message || "处置候选经验失败");
+      setNotice(`候选经验已标记为${candidateStatusLabel(status)}`);
+      await load(true);
+      return true;
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "处置候选经验失败"); return false; }
+    finally { setKnowledgeBusy(false); }
+  }
+
   async function sendWrite(request: WriteRequest) {
     const existing = pendingWriteRef.current;
     assertPendingWriteCanSend(existing, request);
@@ -286,7 +306,7 @@ export default function Home() {
           : <KnowledgeDetailView entry={entry} busy={knowledgeBusy} model={knowledgeModel} onBack={() => goTo(lastEntrySection)} onOpen={(id, kind) => void openEntry(id, kind)} onGenerate={(id, force) => void generateNote(id, force)} />)}
         {!loading && !trial && view === "projects" && <KnowledgeListView kind="project" items={knowledgeProjects} onOpen={openEntry} />}
         {!loading && !trial && view === "toolbox" && <KnowledgeListView kind="tool" items={knowledgeTools} onOpen={openEntry} />}
-        {!loading && !trial && view === "space" && <KnowledgeListView kind="note" items={knowledgeNotes} onOpen={openEntry} reuse={reuse} />}
+        {!loading && !trial && view === "space" && <KnowledgeListView kind="note" items={knowledgeNotes} onOpen={openEntry} reuse={reuse} onResolveCandidate={resolveCandidate} />}
         {!loading && !trial && view === "maps" && <KnowledgeListView kind="map" items={knowledgeMaps} onOpen={openEntry} />}
         {!loading && !trial && view === "active" && <ListView title="进行中的行动" subtitle="从这里继续目标、产物和反馈；审阅中的行动也保留在这里。" trials={activeTrials} onOpen={openTrial} empty="还没有进行中的行动" />}
         {!loading && !trial && view === "inbox" && <InboxView trials={trials} onOpen={openTrial} />}
@@ -379,7 +399,7 @@ function sortProjectsByStatus(items: KnowledgeItem[]) {
   });
 }
 
-function KnowledgeListView({ kind, items, onOpen, reuse }: { kind: "project" | "tool" | "note" | "map"; items: KnowledgeItem[]; onOpen: (id: string, kind: string) => void; reuse?: ReuseOverview | null }) {
+function KnowledgeListView({ kind, items, onOpen, reuse, onResolveCandidate }: { kind: "project" | "tool" | "note" | "map"; items: KnowledgeItem[]; onOpen: (id: string, kind: string) => void; reuse?: ReuseOverview | null; onResolveCandidate?: (id: string, status: string, note: string, entryId: string, commit: string) => Promise<boolean> }) {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const meta = kind === "project"
     ? { eyebrow: "Projects", title: "项目", subtitle: "正在推进的项目；已暂停与不再维护的收在页面底部的折叠区。" }
@@ -459,11 +479,19 @@ function KnowledgeListView({ kind, items, onOpen, reuse }: { kind: "project" | "
           </li>)}</ul>}
         </div>
         <div className="reuse-block">
-          <h4>候选经验{reuse.counts.pendingCandidates > 0 ? `（${reuse.counts.pendingCandidates} 条待后续统一整理）` : ""}</h4>
-          {reuse.candidates.length === 0 ? <p className="muted-text">还没有候选经验。</p> : <ul className="reuse-list">{reuse.candidates.slice(0, 5).map((candidate) => <li key={candidate.id}>
+          <h4>候选经验{reuse.counts.pendingCandidates > 0 ? `（${reuse.counts.pendingCandidates} 条待整理）` : ""}</h4>
+          {reuse.candidates.length === 0 ? <p className="muted-text">没有待整理的候选经验。</p> : <ul className="reuse-list">{reuse.candidates.slice(0, 5).map((candidate) => <li key={candidate.id}>
             <span className="reuse-task">{candidate.title}</span>
             <span className="reuse-meta">{candidate.repository}{candidate.suggestion ? ` · ${candidate.suggestion}` : ""}</span>
+            {onResolveCandidate && <CandidateActions candidateId={candidate.id} onResolve={onResolveCandidate} />}
           </li>)}</ul>}
+          {reuse.resolvedCandidates.length > 0 && <details className="resolved-candidates">
+            <summary>最近处理（{reuse.resolvedCandidates.length}）</summary>
+            <ul className="reuse-list">{reuse.resolvedCandidates.slice(0, 5).map((item) => <li key={item.id}>
+              <span className="reuse-task">{item.title} <em className="candidate-status">{candidateStatusLabel(item.status)}</em></span>
+              <span className="reuse-meta">{item.note}{item.entryId ? ` · 条目 ${item.entryId}` : ""}{item.knowledgeCommit ? ` · ${item.knowledgeCommit.slice(0, 8)}` : ""}{item.resolvedAt ? ` · ${shortDateTime(item.resolvedAt)}` : ""}</span>
+            </li>)}</ul>
+          </details>}
         </div>
         <div className="reuse-block">
           <h4>知识使用情况</h4>
@@ -473,7 +501,7 @@ function KnowledgeListView({ kind, items, onOpen, reuse }: { kind: "project" | "
           </li>)}</ul>}
         </div>
       </div>
-      <p className="reuse-hint">结果先保存在 OPC；候选经验只做记录，后续统一整理时才进入知识仓库。</p>
+      <p className="reuse-hint">结果与阶段事件先保存在 OPC；候选经验在这里处置后才进入知识仓库，OPC 不自动改仓库。</p>
     </details>}
     {items.length === 0
       ? <div className="quiet-empty"><BookOpen size={22} /><p>知识仓库里还没有{meta.title}条目</p></div>
@@ -485,6 +513,37 @@ function KnowledgeListView({ kind, items, onOpen, reuse }: { kind: "project" | "
       <summary><strong>已暂停 / 不再维护</strong><span>{pausedProjects.length} 个项目 · 历史记录仍可查看</span></summary>
       <div className="asset-grid">{pausedProjects.map(renderCard)}</div>
     </details>}
+  </div>;
+}
+
+function CandidateActions({ candidateId, onResolve }: { candidateId: string; onResolve: (id: string, status: string, note: string, entryId: string, commit: string) => Promise<boolean> }) {
+  const [open, setOpen] = useState(false);
+  const [status, setStatus] = useState("merged");
+  const [note, setNote] = useState("");
+  const [entryId, setEntryId] = useState("");
+  const [commit, setCommit] = useState("");
+  const [saving, setSaving] = useState(false);
+  if (!open) return <button className="text-button candidate-toggle" onClick={() => setOpen(true)}>处置</button>;
+  const save = async () => {
+    setSaving(true);
+    const ok = await onResolve(candidateId, status, note.trim(), entryId.trim(), commit.trim());
+    setSaving(false);
+    if (ok) setOpen(false);
+  };
+  return <div className="candidate-form">
+    <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="处置方式">
+      <option value="merged">已合并</option>
+      <option value="added">已新增</option>
+      <option value="hold">暂存</option>
+      <option value="discarded">舍弃</option>
+    </select>
+    <input value={note} onChange={(event) => setNote(event.target.value)} placeholder={status === "hold" ? "暂存原因（待复核）" : "处理理由"} />
+    <input value={entryId} onChange={(event) => setEntryId(event.target.value)} placeholder="知识条目 id（可选）" />
+    <input value={commit} onChange={(event) => setCommit(event.target.value)} placeholder="知识仓库提交（可选）" />
+    <div className="candidate-buttons">
+      <button className="primary-button" onClick={() => void save()} disabled={saving || !note.trim()}>{saving ? "保存中…" : "保存"}</button>
+      <button className="text-button" onClick={() => setOpen(false)} disabled={saving}>取消</button>
+    </div>
   </div>;
 }
 
@@ -522,6 +581,33 @@ function KnowledgeDetailView({ entry, busy, model, onBack, onOpen, onGenerate }:
         {note.inferences.length > 0 && <><h3>模型推断（非原文事实）</h3><ul className="inference-list">{note.inferences.map((item, index) => <li key={`inference-${index}`}>{item}</li>)}</ul></>}
       </>}
     </section>
+    {entry.progress && <section className="knowledge-section progress-section">
+      <h2>最近进展</h2>
+      <div className="progress-head">
+        <strong>{entry.progress.stage ? entry.progress.stage.title : "还没有阶段性记录"}</strong>
+        <span className="progress-meta">{entry.progress.updatedAt ? `更新 ${shortDateTime(entry.progress.updatedAt)}` : ""}{entry.progress.updatedAt ? " · " : ""}共 {entry.progress.total} 条记录 · {entry.progress.repositories.join(" / ")}</span>
+      </div>
+      {entry.progress.events.length > 0 && <ul className="progress-list">{entry.progress.events.map((record) => <li key={record.id}>
+        <div className="progress-item-head">
+          <span className={`progress-type type-${record.type}`}>{progressTypeLabel(record.type)}</span>
+          <strong>{record.title}</strong>
+          <span className={`progress-status status-${record.status}`}>{progressStatusLabel(record.status)}</span>
+        </div>
+        <span className="progress-meta">{[shortDateTime(record.occurredAt), record.machine, record.branch, record.commit ? record.commit.slice(0, 8) : "", record.dirty ? "有未提交改动" : ""].filter(Boolean).join(" · ")}</span>
+        {record.content && <p>{record.content}</p>}
+        {record.rationale && <p className="progress-rationale">理由：{record.rationale}</p>}
+        {record.verification && <p className="progress-verification">验证：{record.verification}</p>}
+        {record.note && <p className="progress-note">{record.note}</p>}
+        {record.evidence.length > 0 && <details className="progress-evidence"><summary>证据（{record.evidence.length}）</summary><ul>{record.evidence.map((item, index) => <li key={`evidence-${index}`}><code>{item}</code></li>)}</ul></details>}
+      </li>)}</ul>}
+      {entry.progress.environment.length > 0 && <><h3>环境验证</h3><ul className="progress-environment">{entry.progress.environment.map((record) => <li key={record.id}>
+        <span className={record.verifiedOnThisMachine ? "env-badge ok" : "env-badge"}>{record.verifiedOnThisMachine ? "本机已验证" : "其他机器验证 · 不代表本机已就绪"}</span>
+        <strong>{record.title}</strong>
+        <span className="progress-meta">{[record.verification, record.machine, shortDateTime(record.occurredAt)].filter(Boolean).join(" · ")}</span>
+      </li>)}</ul></>}
+      {entry.progress.blockers.length > 0 && <><h3>阻塞</h3><ul>{entry.progress.blockers.map((record) => <li key={record.id}>{record.title}{record.nextStep ? `（下一步：${record.nextStep}）` : ""}</li>)}</ul></>}
+      {entry.progress.nextSteps.length > 0 && <><h3>下一步</h3><ol>{entry.progress.nextSteps.map((step, index) => <li key={`next-${index}`}>{step}</li>)}</ol></>}
+    </section>}
     {entry.related.length > 0 && <section className="knowledge-section">
       <h2>相关知识</h2>
       <RelatedKnowledge items={entry.related} onOpen={onOpen} />

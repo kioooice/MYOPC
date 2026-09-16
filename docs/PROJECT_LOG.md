@@ -279,3 +279,33 @@
 - 收集不要求单独对话、也不强制固定节奏；2026-09-11 已按本文件用真实项目跑通一次完整链路。
 - 未用 Basic Auth 凭据从第二台设备完整走查页面，只验证了可达性与认证拦截。
 - 模型输出只做结构与长度校验，未逐条人工复核；`card` 偶发超出 90 字目标，靠按句收边兜底。
+
+## 2026-09-16 OPC V0.2：项目进展即时回流与新会话恢复
+
+**新增进展**
+
+- 新增 `project_events`（migration 13）保存阶段事件：类型（plan / progress / decision / environment / finding / blocker）、内容、理由、状态、验证方式、证据、下一步、机器 / 分支 / 提交 / 未提交标记，以及 `supersedes_id / superseded_by` 更正关系。`agent_task_results` 增加 `submission_id / machine / branch / commit_sha / dirty / event_count`（migration 13），`knowledge_candidates` 增加处置字段（migration 14）。
+- `opc result` 支持一次回流多个 `--event`，旧的 task/changes/validation/findings 形式保持兼容；同一次回流重试按（submission_id, 序号）判重。
+- 新增 `opc bootstrap` 与 `POST /api/v1/agent/bootstrap`、`GET /api/v1/agent/events/:id`：按仓库 + 分支 + 机器 + 提交筛选并组装恢复摘要，长度有上限。
+- 候选经验处置（`POST /api/v1/knowledge/candidates/:id/resolve`、`opc candidates`）：已合并 / 已新增 / 暂存 / 舍弃，记录理由、条目与知识仓库提交。
+- Bridge 增加机器身份、本机路径映射、待重传队列与本地脱敏；页面增加项目「最近进展」区块与候选处置入口；全局 `~/.codex/AGENTS.md` 的 OPC 规则补充新会话恢复与阶段回流。
+
+**关键决策与理由**
+
+- 阶段事件与任务结果分开存：事件是项目状态本身的记录，任务结果是回流批次；这样恢复时不需要从任务描述里猜状态。
+- 事件接收、恢复组装、客户端已提交的候选保存都不调用模型：只有知识阅读说明与相关性判断保留模型，避免模型改写现场事实。
+- `verified` 需要验证方式或证据，否则降级为 `reported`：计划、执行方报告和验证证据必须能分开看。
+- 恢复按分支相关性分层再按时间排序，并标注其他机器 / 其他分支 / 更早提交：同一仓库不同分支、不同机器的记录不能互相覆盖。
+- 冲突只列出不裁决：服务器模型不替人工判断哪条记录仍然有效。
+- 凭据在 Bridge 与服务器两侧各脱敏一次：客户端保证上传载荷干净，服务端作为兜底并报告脱敏次数。
+
+**已验证（本地）**
+
+- `npm test` 79 项通过（新增 18 项）；`npm run lint`、`npx tsc --noEmit`、`npm run build` 通过。
+- 本地实例实测：无记录时 `bootstrap` 返回 `no_records`；写入 progress（verified，带证据）与 decision 两条事件后，`bootstrap` 返回阶段、决定、下一步与记录 ID；重复 `submission_id` 不重复写入。
+
+**未解决 / 未验证**
+
+- 真实视频项目的完整验收与服务器部署（见 DELIVERY_PLAN 的验证结果）。
+- 多机器场景只有标记与筛选逻辑，没有第二台真实机器。
+- 页面最近进展与候选处置只有构建与类型检查，未做浏览器实测。

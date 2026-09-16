@@ -131,3 +131,44 @@
 .paused-projects>summary strong{font-size:clamp(12px,0.9vw,16px)}
 .paused-projects>summary span{color:#9a9b97;font-size:clamp(10px,0.72vw,14px)}
 .paused-projects[open]>summary{margin-bottom:14px}
+
+/* OPC V0.2：项目详情的最近进展。 */
+.progress-section .progress-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.progress-section .progress-head strong{font-size:clamp(12px,0.9vw,16px);color:#3c3e3a}
+.progress-meta{color:#8a8c86;font-size:clamp(10px,0.72vw,14px);line-height:1.7}
+.progress-list,.progress-environment{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.progress-list li{display:grid;gap:4px;padding:10px 12px;border:1px solid var(--soft);border-radius:8px;background:#fcfcfa}
+.progress-item-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.progress-item-head strong{font-size:clamp(11px,0.82vw,15px);color:#3c3e3a}
+.progress-type,.progress-status,.env-badge{padding:2px 7px;border-radius:999px;font-size:clamp(9px,0.66vw,12px);white-space:nowrap}
+.progress-type{background:#eef1ec;color:#5d605a}
+.progress-type.type-decision{background:#e8f0ea;color:#236b4b}
+.progress-type.type-blocker{background:#f7e9e5;color:#8f4a34}
+.progress-type.type-environment{background:#e9eef4;color:#3f5c7a}
+.progress-status{background:#f4f5f1;color:#7c7e78}
+.progress-status.status-verified{background:#e4f2e9;color:#236b4b}
+.progress-status.status-reported{background:#f2f2ee;color:#6f716b}
+.progress-status.status-blocked{background:#f7e9e5;color:#8f4a34}
+.progress-status.status-superseded{background:#f1f1f1;color:#9a9b97}
+.env-badge{background:#f7f2e8;color:#8a6a34}
+.env-badge.ok{background:#e4f2e9;color:#236b4b}
+.progress-list p{margin:0!important;font-size:clamp(11px,0.8vw,15px);line-height:1.75;color:#4f524c}
+.progress-list p.progress-rationale{color:#5d605a}
+.progress-list p.progress-verification{color:#236b4b}
+.progress-list p.progress-note{color:#8a6a34}
+.progress-evidence{margin-top:4px}
+.progress-evidence>summary{cursor:pointer;color:#7c7e78;font-size:clamp(10px,0.72vw,13px)}
+.progress-evidence ul{margin:6px 0 0;padding-left:18px}
+.progress-evidence code{font-family:"Cascadia Mono","Microsoft YaHei UI",monospace;font-size:clamp(10px,0.7vw,13px);color:#565952}
+.progress-environment li{display:grid;gap:3px;padding:9px 11px;border:1px solid var(--soft);border-radius:8px;background:#fcfcfa}
+.progress-environment strong{font-size:clamp(11px,0.8vw,15px);color:#3c3e3a}
+
+/* 候选经验：页面内处置（不建审批系统）。 */
+.candidate-toggle{margin-top:4px;justify-self:start;color:var(--accent);font-size:clamp(10px,0.72vw,13px)}
+.candidate-form{display:grid;gap:6px;margin-top:6px;padding:8px;border:1px solid var(--soft);border-radius:8px;background:#f8f8f6}
+.candidate-form select,.candidate-form input{padding:5px 7px;border:1px solid #dcded8;border-radius:6px;background:#fff;color:#3c3e3a;font-size:clamp(10px,0.72vw,13px)}
+.candidate-buttons{display:flex;gap:8px;align-items:center}
+.candidate-status{margin-left:6px;color:#5d605a;font-size:.9em;font-style:normal}
+.resolved-candidates{margin-top:10px}
+.resolved-candidates>summary{cursor:pointer;color:#7c7e78;font-size:clamp(10px,0.72vw,13px)}
+@media(max-width:800px){.progress-item-head{gap:6px}}

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { acceptVersion, BusinessError, createCapture, createDecision, createDeliverable, createDraft, createFeedback, createMethod, createProject, createProjectLocation, createTrial, createVersion, getAssets, getCapture, getCaptureFile, getCaptures, getContext, getDashboard, getEvents, getMethod, getMethods, getProject, getProjects, getLibrary, startTrial, updateCapture, updateProject, updateTrial } from "@/lib/business";
 import { KnowledgeError } from "@/lib/knowledge/repo";
-import { generateKnowledgeNote, getKnowledgeDetail, getKnowledgeOverview, getKnowledgeReuseOverview, processKnowledgeNotes, queryAgentContext, submitAgentResult, syncKnowledge } from "@/lib/knowledge/service";
+import { bootstrapAgent, generateKnowledgeNote, getKnowledgeDetail, getKnowledgeOverview, getKnowledgeReuseOverview, getProgressRecord, processKnowledgeNotes, queryAgentContext, resolveCandidate, submitAgentResult, syncKnowledge } from "@/lib/knowledge/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,9 @@ type Context = { params: Promise<{ segments: string[] }> };
 function errorResponse(error: unknown) {
   if (error instanceof BusinessError) return NextResponse.json({ error: error.code, message: error.message, details: error.details }, { status: error.status });
   if (error instanceof KnowledgeError) {
-    const status = error.code === "knowledge_entry_not_found" ? 404 : error.code === "knowledge_directory_missing" || error.code === "task_required" ? 400 : 502;
+    const notFound = ["knowledge_entry_not_found", "candidate_not_found", "progress_record_not_found"];
+    const badRequest = ["knowledge_directory_missing", "task_required", "candidate_id_required", "candidate_status_invalid", "candidate_note_required"];
+    const status = notFound.includes(error.code) ? 404 : badRequest.includes(error.code) ? 400 : 502;
     return NextResponse.json({ error: error.code, message: error.message }, { status });
   }
   console.error(error);
@@ -45,6 +47,11 @@ export async function GET(request: NextRequest, context: Context) {
       return NextResponse.json(detail);
     }
     if (segments[0] === "knowledge" && segments[1] === "reuse") return NextResponse.json(getKnowledgeReuseOverview());
+    if (segments[0] === "agent" && segments[1] === "events" && segments[2]) {
+      const record = getProgressRecord(segments[2]);
+      if (!record) return NextResponse.json({ error: "progress_record_not_found", message: "进展记录不存在" }, { status: 404 });
+      return NextResponse.json(record);
+    }
     if (segments[0] === "knowledge") {
       return NextResponse.json(getKnowledgeOverview({
         kind: request.nextUrl.searchParams.get("kind") || undefined,
@@ -96,6 +103,14 @@ export async function POST(request: NextRequest, context: Context) {
     }
     if (key === "agent/result") {
       const result = await submitAgentResult(body);
+      return NextResponse.json(result, { status: 200 });
+    }
+    if (key === "agent/bootstrap") {
+      const result = bootstrapAgent(body);
+      return NextResponse.json(result, { status: 200 });
+    }
+    if (segments[0] === "knowledge" && segments[1] === "candidates" && segments[2] && segments[3] === "resolve") {
+      const result = resolveCandidate({ ...body, candidate_id: body.candidate_id ?? segments[2] });
       return NextResponse.json(result, { status: 200 });
     }
   } catch (error) {

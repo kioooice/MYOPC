@@ -2,7 +2,8 @@ import { getKnowledgeDirectory, getKnowledgeRepository, knowledgeSourceUrl, read
 import { pullKnowledgeRepository } from "./git";
 import { describeModelConfig, getModelConfig } from "./model";
 import { PROMPT_VERSION, generateReadingNote, processPendingReadingNotes } from "./reading-note";
-import { getReuseOverview, recordTaskResult, selectReusableKnowledge, type ReuseOverview } from "./reuse";
+import { getReuseOverview, recordTaskResult, resolveKnowledgeCandidate, selectReusableKnowledge, type ReuseOverview } from "./reuse";
+import { buildRecoverySummary, getProjectEvent, getRepositoryProgress, type EntryProgress } from "./progress";
 import {
   applyKnowledgeSnapshot,
   countEntriesNeedingNote,
@@ -69,6 +70,8 @@ export type KnowledgeDetail = KnowledgeListItem & {
   /** 说明是否来自旧版本原文或旧规程。 */
   stale: boolean;
   promptVersion: string;
+  /** OPC V0.2：条目关联仓库的最近进展；没有回流记录时为 null。 */
+  progress: EntryProgress | null;
 };
 
 function sourceLabel(source: KnowledgeSourceRef) {
@@ -184,6 +187,44 @@ export function submitAgentResult(body: Record<string, unknown>) {
   return recordTaskResult(body);
 }
 
+/** OPC V0.2：新会话恢复项目状态；只做筛选与组装，不调用模型。 */
+export function bootstrapAgent(body: Record<string, unknown>) {
+  return buildRecoverySummary({
+    repository: body.repository,
+    branch: body.branch,
+    commit: body.commit,
+    machine: body.machine,
+    task: body.task,
+    limit: body.limit,
+  });
+}
+
+/** 单条进展记录详情：bootstrap 返回的记录 ID 用它继续读取。 */
+export function getProgressRecord(id: string) {
+  return getProjectEvent(id);
+}
+
+/** 整理会话的候选处置：已合并 / 已新增 / 暂存 / 舍弃。 */
+export function resolveCandidate(body: Record<string, unknown>) {
+  return resolveKnowledgeCandidate({
+    id: body.candidate_id ?? body.id,
+    status: body.status,
+    note: body.note,
+    entryId: body.entry_id ?? body.entryId,
+    knowledgeCommit: body.knowledge_commit ?? body.knowledgeCommit,
+    actor: body.actor,
+  });
+}
+
+/** 知识条目关联的仓库标识：sources 里的 repo，加 GitHub 入口链接。 */
+function entryRepositories(entry: KnowledgeEntryRecord) {
+  const values = new Set<string>();
+  for (const source of entry.sources) if (source.repo && source.repo.trim()) values.add(source.repo.trim());
+  const match = /^https?:\/\/github\.com\/([^/\s]+)\/([^/\s#?]+)/i.exec(entry.link || "");
+  if (match) values.add(`${match[1]}/${match[2].replace(/\.git$/, "")}`);
+  return [...values];
+}
+
 export function getKnowledgeReuseOverview(): ReuseOverview {
   return getReuseOverview();
 }
@@ -220,6 +261,7 @@ export function getKnowledgeDetail(id: string, options: { kind?: string; query?:
     noteContent: note?.content ?? null,
     stale,
     promptVersion: PROMPT_VERSION,
+    progress: entry.kind === "project" || entry.kind === "tool" ? getRepositoryProgress(entryRepositories(entry)) : null,
   };
 }
 

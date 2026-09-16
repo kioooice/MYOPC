@@ -270,6 +270,50 @@ export function getDb() {
   instance.exec("CREATE TABLE IF NOT EXISTS knowledge_candidates (id TEXT PRIMARY KEY, title TEXT NOT NULL, summary TEXT NOT NULL DEFAULT '', evidence TEXT NOT NULL DEFAULT '', suggestion TEXT NOT NULL DEFAULT '', repository TEXT NOT NULL DEFAULT '', task_result_id TEXT REFERENCES agent_task_results(id), related_entry_ids_json TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
   instance.exec("CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_status ON knowledge_candidates(status, created_at)");
   instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (12, ?)").run(new Date().toISOString());
+  // OPC V0.2：项目关键进展即时回流 + 新会话恢复。事件与回流批次分开存，事件保留更正历史。
+  addColumn("agent_task_results", "submission_id", "TEXT");
+  addColumn("agent_task_results", "machine", "TEXT");
+  addColumn("agent_task_results", "branch", "TEXT");
+  addColumn("agent_task_results", "commit_sha", "TEXT");
+  addColumn("agent_task_results", "dirty", "INTEGER NOT NULL DEFAULT 0");
+  addColumn("agent_task_results", "event_count", "INTEGER NOT NULL DEFAULT 0");
+  instance.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_task_results_submission ON agent_task_results(submission_id) WHERE submission_id IS NOT NULL");
+  instance.exec(`CREATE TABLE IF NOT EXISTS project_events (
+    id TEXT PRIMARY KEY,
+    repository TEXT NOT NULL DEFAULT '',
+    task_result_id TEXT REFERENCES agent_task_results(id),
+    submission_id TEXT,
+    event_index INTEGER NOT NULL DEFAULT 0,
+    event_type TEXT NOT NULL DEFAULT 'progress',
+    topic TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    rationale TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'reported',
+    verification TEXT NOT NULL DEFAULT '',
+    evidence_json TEXT NOT NULL DEFAULT '[]',
+    next_step TEXT NOT NULL DEFAULT '',
+    machine TEXT,
+    branch TEXT,
+    commit_sha TEXT,
+    dirty INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT 'codex',
+    supersedes_id TEXT,
+    superseded_by TEXT,
+    occurred_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
+  instance.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_project_events_submission ON project_events(submission_id, event_index) WHERE submission_id IS NOT NULL");
+  instance.exec("CREATE INDEX IF NOT EXISTS idx_project_events_repository ON project_events(repository, occurred_at)");
+  instance.exec("CREATE INDEX IF NOT EXISTS idx_project_events_type ON project_events(repository, event_type, occurred_at)");
+  instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (13, ?)").run(new Date().toISOString());
+  // OPC V0.2：候选经验处置（已合并 / 已新增 / 暂存 / 舍弃），处理理由与适用知识仓库提交一并保留。
+  addColumn("knowledge_candidates", "resolution_note", "TEXT");
+  addColumn("knowledge_candidates", "resolved_entry_id", "TEXT");
+  addColumn("knowledge_candidates", "knowledge_commit", "TEXT");
+  addColumn("knowledge_candidates", "resolved_at", "TEXT");
+  instance.exec("CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_resolved ON knowledge_candidates(status, resolved_at)");
+  instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (14, ?)").run(new Date().toISOString());
   return instance;
 }
 

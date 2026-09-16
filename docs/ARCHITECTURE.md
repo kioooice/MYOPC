@@ -15,8 +15,9 @@ MYOPC 是 Next.js 单体应用：React / TypeScript 前端、Node.js 服务端�
 | lib/knowledge/model.ts | 模型客户端（默认 DeepSeek，`chat/completions`） |
 | lib/knowledge/reading-note.ts | “阅读说明”规程：提示词、输出校验、失败保留上一次结果 |
 | lib/knowledge/service.ts | 对外服务：同步、列表、详情、生成与批量加工 |
-| lib/knowledge/reuse.ts | 开发知识复用 V0：按任务挑选历史知识、回流任务结果、生成候选经验 |
-| bridge/opc.mjs、bridge/install.ps1 | 本地 OPC Bridge：`opc context` / `opc result`，安装后与项目仓库无关 |
+| lib/knowledge/reuse.ts | 开发知识复用：按任务挑选历史知识、回流任务结果与阶段事件、候选经验与处置 |
+| lib/knowledge/progress.ts | OPC V0.2：项目事件保存、恢复摘要组装、项目最近进展；这一层不调用模型 |
+| bridge/opc.mjs、bridge/install.ps1 | 本地 OPC Bridge：`opc context` / `opc result` / `opc bootstrap` / `opc candidates`，安装后与项目仓库无关 |
 | lib/business.ts、lib/db.ts | 历史业务读写与数据库结构 |
 | scripts/knowledge-sync.ts | 命令行同步与加工（可定时执行） |
 
@@ -43,15 +44,21 @@ Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知�
 
 详情页把正文第一个 Mermaid 块作为主图放在标题下方，其余章节按原文顺序渲染，章节里的其它 Mermaid 块同样渲染成图（主图不重复出现）。渲染由客户端依赖 `mermaid` 完成，宽度自适应，支持「查看大图」放大与全屏；渲染失败时显示错误信息和源码回退，并清理 mermaid 遗留的临时节点。列表页不渲染 Mermaid，只显示标题、Map 类型、一句话说明、核心结构简述和标签。
 
-## 开发知识复用（V0）
+## 开发知识复用（V0.2）
 
-目标是让日常开发保持「打开项目 → 给 Codex 任务 → 正常开发」，由全局 AGENTS.md 约定在值得复用的任务里调用本地 CLI：
+目标是让日常开发保持「打开项目 → 给 Codex 任务 → 正常开发」，由全局 AGENTS.md 约定调用本地 CLI。V0.2 在原有 context / result 上增加阶段回流与新会话恢复，不改变 V0 的调用方式。
 
-1. `opc context --task "..."`：Bridge 从 `git remote get-url origin` 解析 `owner/repo`（读不到时回落到目录名），POST 到 `/api/v1/agent/context`。服务端先过两道 Gate——仓库能否识别、近期是否重复调用——再把全部 visible notes 的标题 / 分类 / 标签 / 一句话说明 / 摘要交给模型挑 0~3 条，相关性分数低于阈值直接丢弃；命中后才读取正文（最多 4000 字）返回。任何失败（模型未配置、超时、服务器不可用）都返回 `used:false` 加可读 reason，不阻塞开发。
-2. `opc result --task "..." --outcome ... --change ... --validation ... --finding ... --knowledge-used ...`：POST 到 `/api/v1/agent/result`，结果写入 `agent_task_results`，同时由模型判定用过的历史知识有效 / 部分有效 / 无效，并只在确有长期价值时提取 0~2 条 `knowledge_candidates`。
-3. 候选经验只记录在 OPC，由人后续统一整理进 `MYOPC-Knowledge`；V0 不自动改知识仓库、不做 embedding / 向量库 / MCP / 知识图谱。
+1. `opc bootstrap`：POST 到 `/api/v1/agent/bootstrap`，带上仓库、分支、提交、机器与未提交标记。服务端只做筛选与组装——按分支相关性分层、再按时间排序，标注其他机器 / 其他分支 / 更早提交的记录，列出未解除的阻塞与下一步，同一主题出现不同记录时显式列出冲突而不裁决。返回有长度上限，记录 ID 可用 `GET /api/v1/agent/events/:id` 继续读取。这一步不调用模型。
+2. `opc context --task "..."`：Bridge 从 `git remote get-url origin` 解析 `owner/repo`（读不到时回落到目录名，也可用 config 的 `projects` 做本机路径映射），POST 到 `/api/v1/agent/context`。服务端先过两道 Gate——仓库能否识别、近期是否重复调用——再把全部 visible notes 的标题 / 分类 / 标签 / 一句话说明 / 摘要交给模型挑 0~3 条，相关性分数低于阈值直接丢弃；命中后才读取正文（最多 4000 字）返回。任何失败都返回 `used:false` 加可读 reason，不阻塞开发。
+3. `opc result`：POST 到 `/api/v1/agent/result`，一次回流可以只带阶段事件（`--event decision|progress|environment|finding|blocker|plan`），也可以带完整的任务结果（`--change / --validation / --finding / --knowledge-used`）。事件写入 `project_events`，批次写入 `agent_task_results`。
+   - 状态语义：`planned`（计划）、`reported`（执行方报告）、`verified`（附验证依据）、`blocked`、`superseded`；`verified` 必须有验证方式或证据，否则按报告记录，服务器不会替执行方升级状态。
+   - 去重与更正：同一次回流重试带同一个 `submission_id`，服务端按（submission_id, 序号）判重，不重复写入；更正用 `--supersedes <记录 id>`，旧记录标记为 `superseded` 但保留历史。
+   - 模型边界：只回流事件时不调用模型；客户端已经提交总结或候选经验时也不调用模型；只有没有自带总结的任务结果才会让模型整理并提取 0~2 条候选经验。
+   - 凭据：事件与任务字段在 Bridge 侧和服务器侧都会做一次脱敏，上传载荷里不出现 Token / 密码原文。
+4. 候选经验处置：`POST /api/v1/knowledge/candidates/:id/resolve`，状态为 `merged / added / hold / discarded`，记录理由、对应知识条目与适用的知识仓库提交；处理过的候选不再进入待整理列表，但保留历史。CLI 入口是 `opc candidates`。
+5. V0.2 仍然不自动改知识仓库、不做 embedding / 向量库 / MCP / 知识图谱。
 
-上下文调用记录写在通用 `events` 表（`entity_type='agent'`、`kind='agent.context.queried'`），既用于近期重复调用 Gate，也是空间页「知识复用」面板的数据来源；Bridge 侧另有一份 `%LOCALAPPDATA%\OPC\` 缓存与 JSONL 日志，项目仓库不产生任何 OPC 文件。
+上下文调用记录写在通用 `events` 表（`entity_type='agent'`、`kind='agent.context.queried'`），既用于近期重复调用 Gate，也是空间页「知识复用」面板的数据来源；候选处置另写 `agent.candidate.resolved` 事件。Bridge 侧另有 `%LOCALAPPDATA%\OPC\` 下的缓存、机器身份、日志与待重传队列，项目仓库不产生任何 OPC 文件。项目详情页的「最近进展」读取同仓库的 `project_events`，没有记录时不显示该区块。
 
 ## 数据表
 
@@ -60,8 +67,9 @@ Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知�
 | knowledge_entries | 条目索引：类型、标题、摘要、状态、标签、来源、正文、相对路径、内容哈希、可见性 |
 | knowledge_reading_notes | 每个条目的阅读说明：规程版本、来源哈希、模型、状态、内容、错误、生成时间 |
 | knowledge_sync_state | 最近一次同步的目录、仓库、分支、提交、计数和时间 |
-| agent_task_results | 开发任务回流结果：仓库、任务、改动 / 验证 / 发现、用到的知识与效果、一句话总结 |
-| knowledge_candidates | 候选经验：标题、内容、依据、建议、来源仓库与任务、状态（默认 pending） |
+| agent_task_results | 回流批次：仓库、任务、改动 / 验证 / 发现、用到的知识与效果、一句话总结，加 `submission_id / machine / branch / commit_sha / dirty / event_count` |
+| project_events | 项目事件（V0.2）：类型、内容、理由、状态、验证方式、证据、下一步、机器 / 分支 / 提交 / 脏标记、`supersedes_id / superseded_by`（更正历史） |
+| knowledge_candidates | 候选经验：标题、内容、依据、建议、来源仓库与任务、状态（pending / merged / added / hold / discarded）与处置信息 |
 
 前端不直接写库，全部经 HTTP 接口；模型只由服务端调用。
 
@@ -75,8 +83,11 @@ Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知�
 | POST | /knowledge/notes | 生成或重新生成单个条目的阅读说明（`entry_id`、`force`） |
 | POST | /knowledge/process | 批量加工待处理条目（`limit`，单次最多 10 条） |
 | POST | /agent/context | 开发知识复用：按任务取 0~3 条历史知识（`repository`、`task`、可选 `force`） |
-| POST | /agent/result | 开发知识复用：回流任务结果，必要时生成候选经验 |
-| GET | /knowledge/reuse | 知识复用观察数据（最近调用、候选经验、知识使用情况） |
+| POST | /agent/result | 回流任务结果与阶段事件（`submission_id`、`machine / branch / commit / dirty`、`events`、可选 `summary / candidates`） |
+| POST | /agent/bootstrap | 新会话恢复：按仓库 / 分支 / 机器 / 提交筛选并组装恢复摘要（不调用模型） |
+| GET | /agent/events/:id | 单条项目事件详情 |
+| GET | /knowledge/reuse | 知识复用观察数据（最近调用、待整理与已处理候选经验、知识使用情况） |
+| POST | /knowledge/candidates/:id/resolve | 候选经验处置：merged / added / hold / discarded + 理由、条目与知识仓库提交 |
 | GET | /health、/dashboard、/library、/events | 运行与历史数据概览 |
 | GET | /captures、/captures/:id、/captures/:id/file | 历史素材读取 |
 | GET | /methods、/methods/:id、/projects、/projects/:id | 历史方法、项目读取 |
