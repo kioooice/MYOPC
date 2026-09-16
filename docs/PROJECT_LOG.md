@@ -332,6 +332,8 @@
 - 凭据：含 `sk-…` 与 `API_KEY=…` 的载荷返回 `redactions:2`，库内保存为 `DEEPSEEK_API_KEY=[已脱敏]`。
 - 失败路径：`OPC_SERVER` 不可达时 `opc result` 返回 `queued:true`，下一次命令自动补发（doctor `flush.sent=1`），事件最终落库；业务仓库没有产生 OPC 文件。
 - 记录详情 `GET /api/v1/agent/events/:id` 正常；候选处置缺少 `--note` 返回 400。
+- 视频项目的发行版修复后来从只读检查扩成 `--repair`（补内部包 junction、13 个关键外部依赖与 inter 字体，只补缺失、可重复运行），并在干净 TEMP 重装 `@hypit/hypit@0.1.9` 的场景验证通过；原阻塞记录由新记录 `supersedes` 关闭，`bootstrap` 不再列出它。
+- 顺带修正恢复摘要：已被替代的记录不再贡献"下一步"，项目更新时间取最新有效记录（原来的实现会把作废记录的下一步继续列出来）。
 
 **未解决 / 未验证**
 

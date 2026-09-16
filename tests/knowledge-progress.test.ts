@@ -156,6 +156,17 @@ describe("bootstrap · 恢复摘要", () => {
     expect(summary.conflicts[0].note).toContain("人工确认");
   });
 
+  it("被替代的记录不再贡献下一步，更新时间取最新有效记录", () => {
+    const blocker = saveSample([{ event_type: "blocker", title: "修复不可持久", content: "重装要重做", next_step: "补一个修复脚本" }], "sub-super-1");
+    expect(buildRecoverySummary({ repository, branch: "main", machine: "WIN-TEST" }).blockers).toHaveLength(1);
+    saveSample([{ event_type: "progress", title: "修复可重跑", content: "脚本补齐", status: "reported", next_step: "接入画面", supersedes: blocker.saved[0].id }], "sub-super-2");
+    const summary = buildRecoverySummary({ repository, branch: "main", machine: "WIN-TEST" });
+    expect(summary.blockers).toHaveLength(0);
+    expect(summary.nextSteps.map((item) => item.text)).toEqual(["接入画面"]);
+    expect(summary.updatedAt).toBe(summary.recent[0].occurredAt);
+    expect(summary.recent.some((record) => record.status === "superseded")).toBe(true);
+  });
+
   it("阶段与下一步都来自记录本身", () => {
     saveSample([{
       event_type: "progress", title: "中文短视频流水线打通", content: "TTS → 对齐 → 字幕 → 渲染 → 成片",

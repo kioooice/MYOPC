@@ -515,7 +515,8 @@ export function buildRecoverySummary(input: { repository?: unknown; branch?: unk
 
   const nextSteps: Array<{ text: string; recordId: string }> = [];
   const seenSteps = new Set<string>();
-  for (const record of annotated.slice(0, 10)) {
+  // 只取有效记录：被替代的记录里的"下一步"已经不作数了。
+  for (const record of active.slice(0, 10)) {
     const step = record.nextStep.trim();
     if (!step || seenSteps.has(step)) continue;
     seenSteps.add(step);
@@ -565,7 +566,7 @@ export function buildRecoverySummary(input: { repository?: unknown; branch?: unk
     counts: { records: rows.length, sameBranch, otherBranch, otherMachine, olderCommit },
     goal: goalRecord ? { text: trim(goalRecord.content || goalRecord.title, SUMMARY_CONTENT), recordId: goalRecord.id, at: goalRecord.occurredAt } : null,
     phase,
-    updatedAt: annotated[0]?.occurredAt ?? null,
+    updatedAt: active[0]?.occurredAt ?? null,
     recent,
     decisions,
     environment,
@@ -609,7 +610,7 @@ export function getRepositoryProgress(repositories: string[], limit = 6): EntryP
   return {
     repositories: repos,
     stage: stage ? { title: stage.title, status: stage.status, occurredAt: stage.occurredAt } : null,
-    updatedAt: annotated[0]?.occurredAt ?? null,
+    updatedAt: activeRecords[0]?.occurredAt ?? null,
     events: activeRecords.slice(0, limit),
     environment: activeRecords.filter((record) => record.type === "environment").slice(0, 3)
       .map((record) => ({ ...record, verifiedOnThisMachine: record.status === "verified" })),
