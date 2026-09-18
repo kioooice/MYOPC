@@ -398,3 +398,12 @@
 **未解决**
 
 - 阶段 2 尚未实施；四板块页面和反馈生成尚未开始。后续反馈对真实经营判断的价值需在实际使用中观察，不能由命令调用成功代替。
+
+## 2026-09-18 阶段 2 服务器部署
+
+- 用户明确服务器是日常浏览入口；阶段 2 部署不再等待阶段 5，后续可用增量按阶段上线，四板块页面仍待阶段 3。
+- 服务器从 2aa4274 更新到 c6699a7，包含 2be782f 的阶段 2 实现；新增 Docker 构建排除环境配置和本地临时目录，已验证新镜像无运行环境文件。服务器原有未跟踪 docker-compose.prod.yml 与本机未跟踪目录均保留。
+- 数据库通过 SQLite backup API 备份至 `/opt/backups/opc/pre-workspace-20260918T144737Z/myopc.sqlite`，同目录保存切换前计数及私有运行配置；旧镜像保留为 `opc-myopc:rollback-2aa4274-20260918`。备份与迁移后数据库完整性、外键检查通过，原 24 张表计数未减少，migration=15。
+- 生产镜像构建通过；隔离测试容器设置 NODE_ENV=test 并只读挂载 Git 元数据后，90/91 通过。剩余用例硬编码 Windows 路径，在 Linux basename 下失败；本机 Bridge 11/11 通过，未因此修改应用业务逻辑。首次容器测试额外失败来自 production 自动种子数据与缺少 Git 元数据，纠正测试环境后消失。
+- 公网 Basic Auth 下首页、health、knowledge、workspace subjects、按 media 导出均 HTTP 200，health release=c6699a7；47 条知识记录仍在，workspace 当前 0 个主题，没有写入合成生产数据。浏览器通过 SSH 隧道查看服务器首页和 MYOPC 详情成功，控制台仅 favicon.ico 404，容器核对时重启数为 0。
+- 全局 Bridge 已备份旧 CLI 后更新，配置文件哈希保持一致；通过已安装 opc workspace 查询服务器成功。阶段 3 页面、阶段 4 反馈和真实经营价值尚未验证，部署接口不等于完成新页面。

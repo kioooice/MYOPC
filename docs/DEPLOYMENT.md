@@ -45,6 +45,8 @@ npx tsx scripts/knowledge-sync.ts --force-entry id # 强制重做某一条
 
 ## 服务器（124.222.190.89）
 
+服务器是用户日常浏览 OPC 的主要入口，本机用于开发；完成可用增量后及时部署，不统一等到整个改造结束。当前运行版本为 `c6699a7`（2026-09-18，阶段 2 接口已上线，四板块页面尚未实现）。
+
 当前结构：
 
 | 位置 | 内容 |
@@ -60,7 +62,7 @@ npx tsx scripts/knowledge-sync.ts --force-entry id # 强制重做某一条
 1. 本地确认改动已提交并推送，记录提交 SHA。
 2. 服务器 `git -C /opt/apps/opc fetch` 并切到目标提交，工作区保持干净。
 3. 备份 `/opt/data/opc/myopc.sqlite`（SQLite backup API，校验完整性与外键）。
-4. `docker compose -f deploy/opc-server.compose.yml up -d --build`（项目名固定为 `opc`，构建参数带 `DEBIAN_MIRROR`）。
+4. 先 `docker compose -f deploy/opc-server.compose.yml build`，通过后更新 `.env` 的 `MYOPC_RELEASE` 并 `up -d --no-build`（项目名固定为 `opc`，构建参数带 `DEBIAN_MIRROR`）；保留旧镜像供回退。`.dockerignore` 排除 `.env` 与 `.env.*`，运行配置由 Compose 注入。
 5. 核对 `MYOPC_RELEASE`、`/api/v1/health`、`/api/v1/knowledge` 与 `:3010` 的实际返回。
 
 知识内容与代码分开更新：只改知识仓库时不需要重新部署，同步一次即可；改代码或依赖才重建容器。

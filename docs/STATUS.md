@@ -2,7 +2,7 @@
 
 ## 2026-09-18 一人公司改造阶段 2：信息承接与当前状态已完成
 
-- 阶段 2/5 已完成；阶段 3 页面重组、阶段 4 反馈生成、阶段 5 真实使用与部署均未开始。本轮没有修改主页面、服务器或已安装 Bridge。
+- 阶段 2/5 已完成并部署服务器；阶段 3 页面重组、阶段 4 反馈生成、阶段 5 真实使用验收未开始。主页面尚未改动。
 - 新增 migration 15 与 `lib/workspace/`：四板块主题、显式引用、追加历史记录、`subject_id + slot` 当前 heads、`history / set_current / clear_current` 原子写入、revision / expected-current 冲突、观察时间冲突、幂等回放和清除后不回退。
 - 新 API：`/api/v1/workspace/subjects`、`/workspace/subjects/:id`、`/workspace/records/:id`、`/workspace/context`、`/workspace/export`；context 要求显式范围，只从 heads 组装当前内容，历史和来源单独标注，并报告缺失引用与可能更新的知识 / 项目材料。
 - Bridge 新增 `workspace` action（subjects / subject / create / update / record / record-detail / context / export）；写入带 `X-Client-Request-Id`，网络失败保存完整脱敏载荷入队，409 直接可见且不自动覆盖，队列补发遇 409 后标记 blocked。
@@ -15,7 +15,8 @@
 
 ### 限制与遗留
 
-- 仅本地验证，未部署服务器，也未覆盖已安装的全局 Bridge 副本；后续如需使用需按 `bridge/README.md` 重新安装 / 指向本地实例。
+- 服务器 `http://124.222.190.89:3010` 已部署 `c6699a7`（包含阶段 2 提交 `2be782f`，额外排除 Docker 构建中的环境配置）。全局 Bridge 已更新，原连接配置保持不变，新接口当前没有真实主题数据。
+- 服务器生产构建通过；隔离容器测试 90/91 通过，剩余 Windows 路径用例在本机 Bridge 11/11 测试中通过。迁移至 15，数据库完整性与外键检查通过，原 24 张表记录数未减少。公网带认证的首页、健康、知识、主题与导出接口均为 200；浏览器通过 SSH 隧道读取服务器首页及项目详情，控制台仅 favicon.ico 404。
 - 来源读取是确定性提示：知识条目和项目事件可查，文件只核对存在与修改时间，URL 只标为未解析；不联网、不调用模型、不自动把来源材料改写为当前状态。
 - 页面没有接入 workspace 数据，阶段 3 才讨论首页与四板块页面；本轮也没有导入真实个人内容。
 
