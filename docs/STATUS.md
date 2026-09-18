@@ -5,7 +5,9 @@
 - 原讨论任务已将首轮页面交付 `b185992` 退回补修；当前只记录“首轮已交付、正在验收补修”，不宣称原讨论任务已经验收通过，也不进入第二轮接续或阶段 4。
 - 本轮修复默认入口与导航语义、事件证据状态和业务工作状态的分离、显式待决判定、摘要省略 / 截断提示、主题详情历史分页、剪贴板失败兜底及用户文案；新增纯函数回归覆盖这些边界，并补充 `icon.svg`。
 - 本机验证：`npm test` 99/99、`npm run lint`、`npx tsc --noEmit`、`npm run build` 通过；隔离本地实例浏览器验证默认 OPC 总览、主题跳转、跨板块关联、106 条历史继续读取、HTTP 剪贴板兜底和 390px 无横向溢出，页面错误为空。
-- 生产补正与新版本部署待本轮提交后执行；生产现有数据、备份和运行配置不在本机隔离验收中修改。
+- 生产已切换到应用提交 `72a0ff7`，健康接口返回 `release=72a0ff7`，容器 `running / RestartCount=0`；部署前备份 `/opt/backups/opc/pre-stage3-repair-72a0ff7-20260919T074100Z/myopc.sqlite`，部署后备份 `/opt/backups/opc/post-stage3-repair-72a0ff7-20260919T074500Z/myopc.sqlite`，两次均 `integrity=ok`、外键错误 0。
+- 生产 `myopc-stage2` 的 `stage` head 已用 `585a8656-6b8c-47fe-91a1-bc627e80fa26` 追加更正，明确“第一轮已交付、正在验收补修”，保留旧记录和 `opc:event:evt-20260918-79795c` 来源；当前数据库为 2 个主题、5 条记录、4 个 heads。Bridge `opc doctor` 可达且待补传队列为 0。
+- 服务器隔离回归（`NODE_ENV=test`）排除既有 Linux 环境不适配的 `tests/bridge.test.mjs` 后为 88/88；完整套件为 97/99，剩余 2 个失败均为 Bridge 在 Linux `/app` 下解析 Windows 仓库路径的既有断言。服务器通过 SSH 隧道浏览器复验默认入口、补正主题详情和 390px 无横向溢出，页面错误为空。
 
 ## 2026-09-19 阶段 3 第一轮页面交付
 
