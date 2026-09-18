@@ -59,7 +59,7 @@ export default function Home() {
   const [knowledgeBusy, setKnowledgeBusy] = useState(false);
   const [lastEntrySection, setLastEntrySection] = useState<View>("projects");
   const [selected, setSelected] = useState("");
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View>("workspace");
   const [workspaceBoard, setWorkspaceBoard] = useState<WorkspaceBoard>("overview");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -281,10 +281,10 @@ export default function Home() {
 
   return <main className={sidebarOpen ? "app-shell" : "app-shell sidebar-collapsed"}>
     <aside className="sidebar">
-      <div className="sidebar-head"><button className="logo" onClick={() => goTo("overview")} aria-label="返回总览">M</button><strong>MYOPC</strong><button className="icon-button collapse" onClick={() => setSidebarOpen(false)} title="收起侧边栏"><PanelLeftClose size={18} /></button></div>
+      <div className="sidebar-head"><button className="logo" onClick={() => openWorkspace()} aria-label="返回 OPC 总览">M</button><strong>MYOPC</strong><button className="icon-button collapse" onClick={() => setSidebarOpen(false)} title="收起侧边栏"><PanelLeftClose size={18} /></button></div>
       <nav className="primary-nav" aria-label="主导航">
-        <button className={view === "overview" && !selected ? "nav-item active" : "nav-item"} onClick={() => goTo("overview")}><Sparkles size={17} /><span>总览</span></button>
-        <button className={view === "workspace" ? "nav-item active" : "nav-item"} onClick={() => openWorkspace()}><Compass size={17} /><span>一人公司</span></button>
+        <button className={view === "workspace" && workspaceBoard === "overview" ? "nav-item active" : "nav-item"} onClick={() => openWorkspace()}><Compass size={17} /><span>总览</span></button>
+        <button className={view === "workspace" && workspaceBoard !== "overview" ? "nav-item active" : "nav-item"} onClick={() => openWorkspace()}><Sparkles size={17} /><span>一人公司</span></button>
         <div className="workspace-nav-children">
           <button className={view === "workspace" && workspaceBoard === "personal" ? "nav-item nav-child active" : "nav-item nav-child"} onClick={() => openWorkspace("personal")}><UserRound size={15} /><span>个人</span></button>
           <button className={view === "workspace" && workspaceBoard === "personal_project" ? "nav-item nav-child active" : "nav-item nav-child"} onClick={() => openWorkspace("personal_project")}><Briefcase size={15} /><span>个人项目</span></button>
@@ -292,6 +292,7 @@ export default function Home() {
           <button className={view === "workspace" && workspaceBoard === "media" ? "nav-item nav-child active" : "nav-item nav-child"} onClick={() => openWorkspace("media")}><Megaphone size={15} /><span>自媒体</span></button>
         </div>
         <div className="nav-divider" />
+        <button className={view === "overview" && !selected ? "nav-item active" : "nav-item"} onClick={() => goTo("overview")}><BookOpen size={17} /><span>知识总览</span></button>
         <button className={view === "projects" || (view === "entry" && lastEntrySection === "projects") ? "nav-item active" : "nav-item"} onClick={() => goTo("projects")}><Folder size={17} /><span>项目</span>{knowledgeProjects.length > 0 && <b>{knowledgeProjects.length}</b>}</button>
         <button className={view === "toolbox" || (view === "entry" && lastEntrySection === "toolbox") ? "nav-item active" : "nav-item"} onClick={() => goTo("toolbox")}><Rocket size={17} /><span>工具</span>{knowledgeTools.length > 0 && <b>{knowledgeTools.length}</b>}</button>
         <button className={view === "space" || (view === "entry" && lastEntrySection === "space") ? "nav-item active" : "nav-item"} onClick={() => goTo("space")}><BookOpen size={17} /><span>空间</span>{knowledgeNotes.length > 0 && <b>{knowledgeNotes.length}</b>}</button>
