@@ -7,5 +7,10 @@ node_modules
 *.sqlite-wal
 coverage
 npm-debug.log*
+.env
+.env.*
+!.env.example
+.playwright-cli
+work
 Dockerfile
 docker-compose.yml
