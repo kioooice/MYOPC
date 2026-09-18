@@ -21,7 +21,7 @@
 - 隔离临时 SQLite 的 HTTP + CLI 实测：3000 字当前记录默认 `used=true`、正文完整、响应约 4758 字；6 个同板块主题 `limit=2` 返回 2 个主题和 4 个去重省略 ID；未写入生产数据。
 - 服务器切换前用 SQLite backup API 备份 `/opt/backups/opc/pre-workspace-fix-20260918T182748Z/myopc.sqlite`，`integrity=ok`、无外键错误、migration 15；构建成功后切换 `c127653`，原镜像保留 `opc-myopc:rollback-c6699a7-20260918`，容器重启数 0。
 - 服务器认证 health 返回 `release=c127653`，旧知识接口 HTTP 200，新 workspace subjects/context 可读且生产 workspace 仍为空，未认证公网请求为 401；镜像内未包含 `.env` / `.env.local`。Linux 隔离测试 93/95，两个失败是既有 Bridge Windows 路径假设；本机 Windows 95/95 通过。
-- 关键进展已回流 OPC：本地修复事件 `evt-20260918-dcc946`，完整交付待在部署核对后回流。
+- 关键进展已回流 OPC：本地修复事件 `evt-20260918-dcc946`，完整交付结果 `task-20260918-016`；复用的方法记录为 `project-memory-file`、`local-first-provenance`、`safe-deploy`。
 
 **未解决 / 未验证**
 
