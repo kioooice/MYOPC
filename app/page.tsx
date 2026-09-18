@@ -1,9 +1,10 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BookOpen, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, FileText, Folder, Inbox, Menu, Network, PanelLeftClose, PanelLeftOpen, RefreshCw, Rocket, Search, Sparkles, X } from "lucide-react";
+import { BookOpen, Building2, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Compass, ExternalLink, FileText, Folder, Inbox, Menu, Megaphone, Network, PanelLeftClose, PanelLeftOpen, RefreshCw, Rocket, Search, Sparkles, UserRound, Briefcase, X } from "lucide-react";
 import { assertPendingWriteCanSend, clearPendingWrite, loadPendingWrite, storePendingWrite, type PendingWrite } from "@/lib/pending-write";
 import { MermaidDiagram } from "./mermaid-diagram";
+import WorkspaceView, { type WorkspaceBoard } from "./workspace-view";
 
 type Feedback = { id: string; content: string; status: string; source?: string; kind?: string; handled_at?: string | null };
 type Version = { id: string; ordinal: number; content: string; created_at?: string; review_status?: string; feedback: Feedback[]; handles_feedback_ids: string[] };
@@ -24,7 +25,7 @@ type ProgressRecord = { id: string; type: string; title: string; content: string
 type EntryProgress = { repositories: string[]; stage: { title: string; status: string; occurredAt: string } | null; updatedAt: string | null; events: ProgressRecord[]; environment: Array<ProgressRecord & { verifiedOnThisMachine: boolean }>; blockers: ProgressRecord[]; nextSteps: string[]; total: number };
 type KnowledgeOverviewResponse = { sync: KnowledgeSync; model: { configured: boolean; model: string | null; baseUrl: string | null }; promptVersion: string; repository: string; directory: string; pendingNotes: number; reuse: ReuseOverview; entries: KnowledgeItem[] };
 type WriteRequest = PendingWrite;
-type View = "overview" | "projects" | "toolbox" | "space" | "maps" | "entry" | "active" | "inbox" | "deliverables";
+type View = "overview" | "projects" | "toolbox" | "space" | "maps" | "entry" | "active" | "inbox" | "deliverables" | "workspace";
 
 const statusLabel = (status: string) => ({ in_progress: "进行中", review: "审阅中", done: "已完成", paused: "已暂停" }[status] || status);
 const kindLabel = (kind?: string) => kind === "failure" ? "从失败开始" : kind === "discovery" ? "从资料开始" : "从需求开始";
@@ -59,6 +60,7 @@ export default function Home() {
   const [lastEntrySection, setLastEntrySection] = useState<View>("projects");
   const [selected, setSelected] = useState("");
   const [view, setView] = useState<View>("overview");
+  const [workspaceBoard, setWorkspaceBoard] = useState<WorkspaceBoard>("overview");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -140,6 +142,8 @@ export default function Home() {
   function openTrial(id: string) { setSelected(id); setEntry(null); setView("active"); }
 
   function goTo(nextView: View) { setSelected(""); setEntry(null); setView(nextView); }
+
+  function openWorkspace(board: WorkspaceBoard = "overview") { setSelected(""); setEntry(null); setWorkspaceBoard(board); setView("workspace"); }
 
   async function openEntry(id: string, kind?: string) {
     const section: View = kind === "tool" ? "toolbox" : kind === "note" ? "space" : kind === "map" ? "maps" : "projects";
@@ -280,6 +284,13 @@ export default function Home() {
       <div className="sidebar-head"><button className="logo" onClick={() => goTo("overview")} aria-label="返回总览">M</button><strong>MYOPC</strong><button className="icon-button collapse" onClick={() => setSidebarOpen(false)} title="收起侧边栏"><PanelLeftClose size={18} /></button></div>
       <nav className="primary-nav" aria-label="主导航">
         <button className={view === "overview" && !selected ? "nav-item active" : "nav-item"} onClick={() => goTo("overview")}><Sparkles size={17} /><span>总览</span></button>
+        <button className={view === "workspace" ? "nav-item active" : "nav-item"} onClick={() => openWorkspace()}><Compass size={17} /><span>一人公司</span></button>
+        <div className="workspace-nav-children">
+          <button className={view === "workspace" && workspaceBoard === "personal" ? "nav-item nav-child active" : "nav-item nav-child"} onClick={() => openWorkspace("personal")}><UserRound size={15} /><span>个人</span></button>
+          <button className={view === "workspace" && workspaceBoard === "personal_project" ? "nav-item nav-child active" : "nav-item nav-child"} onClick={() => openWorkspace("personal_project")}><Briefcase size={15} /><span>个人项目</span></button>
+          <button className={view === "workspace" && workspaceBoard === "enterprise_project" ? "nav-item nav-child active" : "nav-item nav-child"} onClick={() => openWorkspace("enterprise_project")}><Building2 size={15} /><span>企业项目</span></button>
+          <button className={view === "workspace" && workspaceBoard === "media" ? "nav-item nav-child active" : "nav-item nav-child"} onClick={() => openWorkspace("media")}><Megaphone size={15} /><span>自媒体</span></button>
+        </div>
         <div className="nav-divider" />
         <button className={view === "projects" || (view === "entry" && lastEntrySection === "projects") ? "nav-item active" : "nav-item"} onClick={() => goTo("projects")}><Folder size={17} /><span>项目</span>{knowledgeProjects.length > 0 && <b>{knowledgeProjects.length}</b>}</button>
         <button className={view === "toolbox" || (view === "entry" && lastEntrySection === "toolbox") ? "nav-item active" : "nav-item"} onClick={() => goTo("toolbox")}><Rocket size={17} /><span>工具</span>{knowledgeTools.length > 0 && <b>{knowledgeTools.length}</b>}</button>
@@ -297,8 +308,9 @@ export default function Home() {
       <div className={view === "overview" ? "content" : "content content-flush"}>
         {pendingWrite && <div className="pending-write-banner"><CircleAlert size={16} /><span><strong>{pendingWrite.label}尚未确认</strong><small>请求已保留；读取成功不代表写入响应已确认。</small></span><button className="retry-button" onClick={() => void retryWrite()} disabled={busy}>重试原请求</button></div>}
         {error && <div className="error-banner"><CircleAlert size={16} /><span>{error}</span>{!pendingWrite && <button className="retry-button" onClick={() => void load()}>重新连接</button>}<button onClick={() => setError("")} aria-label="关闭提示"><X size={16} /></button></div>}
-        {loading && <div className="loading-state">正在读取共享工作状态…</div>}
+        {loading && view !== "workspace" && <div className="loading-state">正在读取共享工作状态…</div>}
         {notice && <div className="notice-banner"><CheckCircle2 size={15} /><span>{notice}</span><button onClick={() => setNotice("")} aria-label="关闭提示"><X size={15} /></button></div>}
+        {view === "workspace" && <WorkspaceView activeBoard={workspaceBoard} onBoardChange={setWorkspaceBoard} />}
         {!loading && view === "overview" && !trial && <OverviewView projects={knowledgeProjects} tools={knowledgeTools} notes={knowledgeNotes} maps={knowledgeMaps} onOpen={openEntry} onNavigate={goTo} />}
         {view === "entry" && entryLoading && <div className="loading-state">正在读取条目…</div>}
         {view === "entry" && !entryLoading && entry && (entry.kind === "map"
