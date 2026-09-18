@@ -439,6 +439,117 @@ function historyReference(row: RecordRow, currentIds: Set<string>) {
   return { id: row.id, subject_id: row.subject_id, kind: row.kind, title: row.title, slot: row.slot, observed_at: row.observed_at, recorded_at: row.recorded_at, replaces_id: row.replaces_id, current: currentIds.has(row.id) };
 }
 
+function contextSlot(row: RecordRow) {
+  return (row as RecordRow & { head_slot?: string }).head_slot || row.slot;
+}
+
+function contextSubject(row: SubjectRow, compact = false, minimal = false) {
+  const meta = subjectMeta(row);
+  if (minimal) {
+    return {
+      id: meta.id,
+      board: meta.board,
+      title: meta.title,
+      status: meta.status,
+      revision: meta.revision,
+      updated_at: meta.updated_at,
+      current_count: meta.current_count,
+      source_count: meta.source_count,
+      missing_source_count: meta.missing_source_count,
+      references_count: meta.references.length,
+    };
+  }
+  if (!compact || meta.references.length <= 2) return meta;
+  return {
+    ...meta,
+    references: meta.references.slice(0, 2),
+    references_count: meta.references.length,
+    references_truncated: true,
+  };
+}
+
+function contextRecord(row: RecordRow, compact = false, minimal = false) {
+  const slot = contextSlot(row);
+  if (minimal) {
+    return {
+      id: row.id,
+      subject_id: row.subject_id,
+      kind: row.kind,
+      title: row.title,
+      slot,
+      observed_at: row.observed_at,
+      recorded_at: row.recorded_at,
+      current: true,
+      content_length: row.content.length,
+      content_preview: row.content.slice(0, 80),
+      content_truncated: row.content.length > 80,
+    };
+  }
+  const view = recordView(row, { slot, current: true });
+  if (!compact) return view;
+  const references = Array.isArray(view.references) ? view.references : [];
+  const rationale = typeof view.rationale === "string" ? view.rationale : null;
+  return {
+    ...view,
+    content: String(view.content).slice(0, 160),
+    content_length: String(view.content).length,
+    content_truncated: String(view.content).length > 160,
+    rationale: rationale ? rationale.slice(0, 160) : rationale,
+    rationale_truncated: Boolean(rationale && rationale.length > 160),
+    references: references.slice(0, 2),
+    references_count: references.length,
+    references_truncated: references.length > 2,
+  };
+}
+
+function contextItem(row: RecordRow, subject: ReturnType<typeof subjectFromRow>, minimal = false) {
+  if (minimal) {
+    return { id: row.id, subject_id: subject.id, title: row.title, slot: contextSlot(row), current: true };
+  }
+  return {
+    id: row.id,
+    subject_id: subject.id,
+    subject_title: subject.title,
+    board: subject.board,
+    kind: row.kind,
+    title: row.title,
+    slot: contextSlot(row),
+    observed_at: row.observed_at,
+    recorded_at: row.recorded_at,
+    origin: row.origin,
+    assertion: row.assertion,
+    source_locator: row.source_locator,
+    content_length: row.content.length,
+    current: true,
+  };
+}
+
+function contextWarnings(sources: WorkspaceReferenceSource[]) {
+  return sources.filter((source) => source.status !== "available").map((source) => ({
+    code: `${source.status}_reference`,
+    reference: source.reference,
+    source_type: source.source_type,
+  }));
+}
+
+function contextSize(scope: Json, subjects: Json[], items: Json[], warnings: Json[], metadata: { reservedOmittedIds: string[]; missingSubjectIds: string[] }) {
+  return JSON.stringify({
+    used: true,
+    reason: null,
+    scope,
+    subjects,
+    items,
+    warnings,
+    missing_subject_ids: metadata.missingSubjectIds,
+    missing_count: metadata.missingSubjectIds.length,
+    truncated: true,
+    budget_exceeded: false,
+    omitted_count: metadata.reservedOmittedIds.length,
+    omitted_ids: metadata.reservedOmittedIds,
+    record_ids: items.map((item) => String(item.id || "")),
+  }).length;
+}
+
 export function buildContext(body: Json = {}) {
   const scope = contextScope(body);
   if (!scope.subjectIds && !scope.board && !scope.repository) return { used: false, reason: "scope_required", scope, subjects: [], items: [], warnings: [] };
@@ -462,39 +573,119 @@ export function buildContext(body: Json = {}) {
   }
   const matchingRows = rows.map((row) => ({ row, subject: subjectFromRow(row), records: listCurrentRecordRows(row.id).map((currentRow) => currentRow as RecordRow) }))
     .filter(({ subject, records }) => !scope.query || subjectMatchesQuery(subject, records, scope.query));
-  const candidates = matchingRows.slice(0, limit);
+  const currentCandidates = matchingRows.filter(({ records }) => records.length > 0);
+  const candidates = currentCandidates.slice(0, limit);
   const subjectPayloads: Json[] = [];
-  const omittedIds: string[] = [];
+  const budgetOmittedIds: string[] = [];
   const itemRecords: Json[] = [];
   const warnings: Json[] = [];
-  const allCandidateIds = matchingRows.map(({ subject }) => subject.id);
-  const outputScope = { ...scope, subject_ids: scope.subjectIds || null, limit, max_chars: maxChars };
+  const limitOmittedIds = currentCandidates.slice(limit).map(({ subject }) => subject.id);
+  const outputScope = {
+    subject_ids: scope.subjectIds || null,
+    board: scope.board || null,
+    repository: scope.repository || null,
+    query: scope.query || null,
+    limit,
+    max_chars: maxChars,
+  };
+  let budgetFallbackUsed = false;
+  const sizeMetadata = { reservedOmittedIds: currentCandidates.map(({ subject }) => subject.id), missingSubjectIds };
   for (const candidate of candidates) {
     const { subject, records } = candidate;
     const currentIds = new Set(records.map((record) => record.id));
     const source = sourceBundle(subject, records);
     const allHistory = listRecordRows(subject.id, { limit: 100, offset: 0 }).filter((record) => !currentIds.has(record.id)).map((record) => historyReference(record, currentIds));
-    const payload: Json = {
-      subject: subjectMeta(candidate.row),
-      current: records.map((record) => recordView(record, { slot: (record as RecordRow & { head_slot?: string }).head_slot || record.slot, current: true })),
-      history: allHistory,
-      sources: source.sources,
-      source_time: source.sourceTime,
-      newer_material_available: source.newestSourceIds.length > 0,
-      newer_source_ids: source.newestSourceIds,
-      warnings: source.warnings,
+    const basePayload = (subjectView: Json, current: Json[], currentTruncated: boolean, minimal = false) => {
+      const base: Json = {
+        subject: subjectView,
+        current,
+        current_truncated: currentTruncated,
+        history: [],
+        sources: [],
+        warnings: [],
+      };
+      if (minimal) {
+        return {
+          ...base,
+          history_truncated: allHistory.length > 0,
+          history_omitted_count: allHistory.length,
+          sources_truncated: source.sources.length > 0,
+          sources_omitted_count: source.sources.length,
+        } as Json;
+      }
+      return {
+        ...base,
+        history_total: allHistory.length,
+        history_truncated: false,
+        history_omitted_count: 0,
+        source_total: source.sources.length,
+        sources_truncated: false,
+        sources_omitted_count: 0,
+        source_time: source.sourceTime,
+        newer_material_available: source.newestSourceIds.length > 0,
+        newer_source_ids: source.newestSourceIds,
+      } as Json;
     };
-    const candidateItems = records.map((record) => ({ ...recordView(record, { slot: (record as RecordRow & { head_slot?: string }).head_slot || record.slot, current: true }), subject_id: subject.id, subject_title: subject.title, board: subject.board }));
-    const projectedSize = JSON.stringify({ used: true, reason: null, scope: outputScope, subjects: [...subjectPayloads, payload], items: [...itemRecords, ...candidateItems], warnings: [...warnings, ...source.warnings] }).length;
-    if (projectedSize > maxChars) {
-      omittedIds.push(subject.id);
-      continue;
+    const variants = [
+      {
+        payload: basePayload(contextSubject(candidate.row), records.map((record) => contextRecord(record)), false),
+        items: records.map((record) => contextItem(record, subject)),
+      },
+      {
+        payload: basePayload(contextSubject(candidate.row, true), records.map((record) => contextRecord(record, true)), true),
+        items: records.map((record) => contextItem(record, subject)),
+      },
+      {
+        payload: basePayload(contextSubject(candidate.row, true, true), records.map((record) => contextRecord(record, false, true)), true, true),
+        items: records.map((record) => contextItem(record, subject, true)),
+      },
+    ];
+    let selected = variants.find(({ payload, items }) => contextSize(outputScope, [...subjectPayloads, payload], [...itemRecords, ...items], warnings, sizeMetadata) <= maxChars);
+    if (!selected) {
+      if (subjectPayloads.length > 0) {
+        budgetOmittedIds.push(subject.id);
+        continue;
+      }
+      selected = variants[2];
+      selected.payload.budget_exceeded = true;
+      budgetFallbackUsed = true;
     }
+    const payload = selected.payload;
+    const candidateItems = selected.items;
+    const payloadHistory = payload.history as unknown[];
+    for (const historyItem of allHistory) {
+      payloadHistory.push(historyItem);
+      if (contextSize(outputScope, [...subjectPayloads, payload], [...itemRecords, ...candidateItems], warnings, sizeMetadata) > maxChars) {
+        payloadHistory.pop();
+        break;
+      }
+    }
+    const historyOmittedCount = allHistory.length - payloadHistory.length;
+    payload.history_omitted_count = historyOmittedCount;
+    payload.history_truncated = historyOmittedCount > 0;
+
+    const payloadSources = payload.sources as WorkspaceReferenceSource[];
+    for (const sourceItem of source.sources) {
+      payloadSources.push(sourceItem);
+      payload.warnings = contextWarnings(payloadSources) as Json[];
+      if (contextSize(outputScope, [...subjectPayloads, payload], [...itemRecords, ...candidateItems], warnings.concat(payload.warnings as Json[]), sizeMetadata) > maxChars) {
+        payloadSources.pop();
+        payload.warnings = contextWarnings(payloadSources) as Json[];
+        break;
+      }
+    }
+    const sourcesOmittedCount = source.sources.length - payloadSources.length;
+    payload.sources_omitted_count = sourcesOmittedCount;
+    payload.sources_truncated = sourcesOmittedCount > 0;
     subjectPayloads.push(payload);
-    warnings.push(...source.warnings as Json[]);
+    warnings.push(...payload.warnings as Json[]);
     itemRecords.push(...candidateItems);
   }
-  const used = subjectPayloads.length > 0 && itemRecords.length > 0;
+  const omittedIds = [...new Set([...limitOmittedIds, ...budgetOmittedIds])];
+  const hasCurrentRecords = currentCandidates.length > 0;
+  const contextTruncated = budgetFallbackUsed || subjectPayloads.some((payload) => payload.current_truncated === true || payload.history_truncated === true || payload.sources_truncated === true);
+  const truncated = omittedIds.length > 0 || missingSubjectIds.length > 0 || contextTruncated;
+  const used = hasCurrentRecords;
   if (!used) {
     return {
       used: false,
@@ -504,12 +695,12 @@ export function buildContext(body: Json = {}) {
       items: [],
       warnings,
       missing_subject_ids: missingSubjectIds,
-      truncated: omittedIds.length > 0,
+      missing_count: missingSubjectIds.length,
+      truncated,
       omitted_count: omittedIds.length,
       omitted_ids: omittedIds,
     };
   }
-  const omitted = Math.max(0, allCandidateIds.length - subjectPayloads.length) + missingSubjectIds.length;
   return {
     used: true,
     reason: null,
@@ -518,9 +709,11 @@ export function buildContext(body: Json = {}) {
     items: itemRecords,
     warnings,
     missing_subject_ids: missingSubjectIds,
-    truncated: omitted > 0,
-    omitted_count: omitted,
-    omitted_ids: [...omittedIds, ...missingSubjectIds],
+    missing_count: missingSubjectIds.length,
+    truncated,
+    budget_exceeded: budgetFallbackUsed,
+    omitted_count: omittedIds.length,
+    omitted_ids: omittedIds,
     record_ids: itemRecords.map((item) => String(item.id)),
   };
 }

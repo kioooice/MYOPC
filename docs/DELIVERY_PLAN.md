@@ -140,11 +140,12 @@ slot 是主题内稳定的小范围问题，例如 `intent`、`stage`、`next_st
 
 1. 优先显式 subject_ids；无显式 ID 时，按 board 或显式绑定的 repository 筛选。query 仅在这一范围内做普通文本筛选，不使用语义召回。
 2. 未给范围时返回 `used:false / scope_required`，不能因为处于某仓库就自动返回个人生活资料；无匹配返回 no_records。
-3. 默认最多 5 个主题，硬上限 10；返回字数受限（默认约 6000 字），包含 truncated、遗漏数量和可继续读取的 ID，不能静默裁切后伪装完整。
-4. 当前内容只从 heads 读取；历史和已被替换内容放在明确标注的 history/source 中，不参与当前下一步。
-5. 通过显式 references 读取项目新事件及知识状态。比较最后观察时间和原材料时间：如果出现后续事件或知识摘要 stale，显示 `newer_material_available` 和来源 ID；不调用模型把不同材料合成新的确定结论。
-6. 未整理的新项目事件可以及时被看见，但不能谎称语义状态已更新。Codex 读到提示后核对来源，并在同一正常任务中按需 set_current。服务端不按自然语言自动判断任务已经完成。
-7. 引用找不到或跨分支时保留缺失/范围提示，不让一个来源不可用导致整个当前状态读取失败。
+3. 默认最多 5 个主题，硬上限 10；返回字数受限（默认约 6000 字），包含 truncated、遗漏数量和可继续读取的 ID，不能静默裁切后伪装完整。`subjects[].current` 优先占用预算，`items` 只返回当前记录的紧凑索引；历史和来源按剩余预算附加，并用各自的 omitted count / truncated 标记说明。
+4. 当前内容只从 heads 读取；历史和已被替换内容放在明确标注的 history/source 中，不参与当前下一步。预算不足时保留最小当前状态并标记 `current_truncated` / `budget_exceeded`，不能把已有当前记录误报为 `no_records`。
+5. `omitted_ids` 只表示因 limit 或字符预算未返回的已存在主题，`missing_subject_ids` 单独表示请求中找不到的主题；`omitted_count` 与去重后的 `omitted_ids` 一致。
+6. 通过显式 references 读取项目新事件及知识状态。比较最后观察时间和原材料时间：如果出现后续事件或知识摘要 stale，显示 `newer_material_available` 和来源 ID；不调用模型把不同材料合成新的确定结论。
+7. 未整理的新项目事件可以及时被看见，但不能谎称语义状态已更新。Codex 读到提示后核对来源，并在同一正常任务中按需 set_current。服务端不按自然语言自动判断任务已经完成。
+8. 引用找不到或跨分支时保留缺失/范围提示，不让一个来源不可用导致整个当前状态读取失败。
 
 Bridge 使用现有单层参数习惯，新增一个命令族即可：
 

@@ -29,7 +29,7 @@ function record(subjectId: string, mode: string, title: string, expected: string
     record: {
       kind: mode === "clear_current" ? "correction" : "observation",
       title,
-      content: `synthetic：${title}`,
+      content: extra.content || `synthetic：${title}`,
       origin: "agent",
       assertion: "reported",
       source_locator: "synthetic:test-case",
@@ -139,5 +139,65 @@ describe("workspace persistence and current-state contract", () => {
     const context = buildContext({ repository: "synthetic/repo" });
     expect(context.subjects[0]).toMatchObject({ newer_material_available: true, newer_source_ids: ["evt-synthetic-new"] });
     expect(context.items[0].title).toBe("已核对状态");
+  });
+
+  it("keeps a long current record usable under the default context budget", () => {
+    subject("synthetic-long-current");
+    record("synthetic-long-current", "set_current", "长当前状态", null, "long-current", { content: "x".repeat(3000) });
+
+    const context = buildContext({ subject_ids: ["synthetic-long-current"] });
+    expect(context).toMatchObject({ used: true, reason: null, truncated: false, omitted_count: 0 });
+    expect(((context.subjects[0] as { current: Array<{ content: string }> }).current[0]).content).toHaveLength(3000);
+    expect(context.items[0]).not.toHaveProperty("content");
+    expect(JSON.stringify(context).length).toBeLessThanOrEqual((context.scope as { max_chars: number }).max_chars);
+  });
+
+  it("limits history and sources before dropping current state", () => {
+    subject("synthetic-context-appendix");
+    updateSubject("synthetic-context-appendix", {
+      expected_revision: 1,
+      references: Array.from({ length: 12 }, (_, index) => ({ kind: "url", locator: `https://example.com/synthetic-${index}-${"x".repeat(80)}` })),
+    }, "appendix-references");
+    for (let index = 0; index < 8; index += 1) {
+      record("synthetic-context-appendix", "history", `历史 ${index}`, null, `appendix-history-${index}`, { observed_at: `2025-01-${String(index + 1).padStart(2, "0")}T00:00:00Z` });
+    }
+    record("synthetic-context-appendix", "set_current", "当前状态", null, "appendix-current");
+
+    const context = buildContext({ subject_ids: ["synthetic-context-appendix"], max_chars: 1800 });
+    expect(context).toMatchObject({ used: true, reason: null, truncated: true });
+    const appendix = context.subjects[0] as { current: unknown[]; history_truncated?: boolean; sources_truncated?: boolean; history_omitted_count: number; sources_omitted_count: number };
+    expect(appendix.current[0]).toMatchObject({ title: "当前状态" });
+    expect(Boolean(appendix.history_truncated) || Boolean(appendix.sources_truncated)).toBe(true);
+    expect(appendix.history_omitted_count + appendix.sources_omitted_count).toBeGreaterThan(0);
+    expect(JSON.stringify(context).length).toBeLessThanOrEqual((context.scope as { max_chars: number }).max_chars);
+  });
+
+  it("reports budget truncation instead of no_records when the budget cannot fit the full state", () => {
+    subject("synthetic-tiny-budget");
+    record("synthetic-tiny-budget", "set_current", "预算边界", null, "tiny-budget");
+
+    const context = buildContext({ subject_ids: ["synthetic-tiny-budget"], max_chars: 500 });
+    expect(context).toMatchObject({ used: true, reason: null, truncated: true });
+    expect(context.reason).not.toBe("no_records");
+    expect(context.omitted_count).toBe(0);
+    expect((context.subjects[0] as { current: unknown[] }).current[0]).toMatchObject({ title: "预算边界", current: true });
+  });
+
+  it("returns unique omitted subject IDs for limit truncation and separates missing IDs", () => {
+    const ids = Array.from({ length: 6 }, (_, index) => `synthetic-limit-${index}`);
+    for (const id of ids) {
+      subject(id, "personal_project");
+      record(id, "set_current", `当前 ${id}`, null, `${id}-current`);
+    }
+
+    const limited = buildContext({ board: "personal_project", limit: 2, max_chars: 24000 });
+    const returnedIds = (limited.subjects as Array<{ subject: { id: string } }>).map((item) => item.subject.id);
+    const expectedOmitted = ids.filter((id) => !returnedIds.includes(id));
+    expect(limited).toMatchObject({ used: true, omitted_count: 4, missing_count: 0, missing_subject_ids: [] });
+    expect(new Set(limited.omitted_ids as string[])).toEqual(new Set(expectedOmitted));
+    expect(new Set(limited.omitted_ids as string[]).size).toBe(4);
+
+    const withMissing = buildContext({ subject_ids: [ids[0], "synthetic-missing-subject"] });
+    expect(withMissing).toMatchObject({ used: true, omitted_count: 0, omitted_ids: [], missing_count: 1, missing_subject_ids: ["synthetic-missing-subject"] });
   });
 });
