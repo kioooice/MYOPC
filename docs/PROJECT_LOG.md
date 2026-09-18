@@ -436,3 +436,22 @@
 
 - 用户要求将讨论任务与 Luna 执行任务的双向交接写入本项目开发约定，不推广为全局规则。执行完成主动回传，验收问题直接返回修复，需用户判断时由讨论任务集中说明。
 - 双向发送已实际验证：执行任务主动回传确认至讨论任务。本次仅固化约定，未启动阶段 3；无应用代码或运行配置变更。
+
+## 2026-09-19 阶段 3 第一轮页面交付
+
+**新增进展与决策**
+
+- 在 `b185992` 中新增 `app/workspace-view.tsx`，通过现有 workspace subjects / context / subject detail 与 agent bootstrap 组合出变化总览、四个一级板块、当前理解、来源 / 时效、跨板块引用、当前头与历史技术记录；旧知识、工具、空间、图谱入口保留。
+- 变化状态只接受已有项目事件的明确 `planned / reported / verified / blocked` 语义；当前没有 `question` / `needs_user_decision` 时不显示待用户审批事项。更正回 Codex 入口追加记录，不提供页面正文编辑。
+- 生产只写入已确认且非敏感的两条主题（个人方向、MYOPC 当前状态）与四条当前记录；企业项目、自媒体保持空白，未导入聊天、家庭、财务、联系方式或完整个人记忆。
+
+**已验证**
+
+- 本机 Windows `npm test` 95/95，lint、TypeScript、build 通过；隔离本地数据的桌面和 390×844 窄屏浏览器检查通过，workspace subjects、四个 context、bootstrap、详情请求 200，控制台无页面错误。
+- 服务器从 `c127653` 切换到 `b185992`，`opc doctor` 认证 health 返回新 release，容器重启数 0；旧 dashboard / knowledge / workspace API 保持可读。部署前后备份分别为 `/opt/backups/opc/pre-stage3-b185992-20260918T192520Z/myopc.sqlite` 与 `/opt/backups/opc/post-stage3-20260918T192936Z/myopc.sqlite`，完整性均 ok、外键错误 0。
+- 服务器全套测试 94/95 的唯一失败是既有 Bridge Windows 路径断言；排除该文件后 84/84，lint / build 通过。页面经 SSH 隧道走查桌面与窄屏，生产数据源与空板块显示符合范围。
+
+**未解决 / 未进入**
+
+- `opc:event:*` locator 在来源解析器中保持待解析并由页面提示，未被当作已验证链接；既有 Linux Bridge 路径测试差异未修复。
+- 阶段 3 第二轮、阶段 4 反馈生成、阶段 5 真实使用验收未开始；本阶段停在第一轮并回原讨论任务验收。

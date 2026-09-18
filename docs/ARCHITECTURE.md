@@ -6,7 +6,7 @@ MYOPC 是 Next.js 单体应用：React / TypeScript 前端、Node.js 服务端�
 
 | 路径 | 用途 |
 | --- | --- |
-| app/page.tsx、app/globals.css | 页面与样式：总览、项目、工具、空间、图谱、条目详情、历史行动 |
+| app/page.tsx、app/workspace-view.tsx、app/globals.css | 页面与样式：OPC 当前状态 / 四板块工作区、总览、项目、工具、空间、图谱、条目详情、历史行动 |
 | app/mermaid-diagram.tsx | 图谱详情页的 Mermaid 渲染（宽度自适应、查看大图、失败回退源码） |
 | app/api/v1/[...segments]/route.ts | HTTP 请求分发 |
 | lib/knowledge/yaml.ts | 知识仓库使用的少量 YAML 解析（`key: value`、内联列表、列表项） |
@@ -68,6 +68,16 @@ Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知�
 阶段 2 API 位于 `/api/v1/workspace`：主题创建 / 乐观更新、记录追加、主题与记录读取、显式范围的确定性 context、带范围保护的 JSON export。`context` 只从 heads 组装当前内容，历史以明确的 history/source 区域返回；显式引用的知识条目、项目事件、文件与 URL 逐项给出可用 / 缺失 / 未解析提示，并标出可能存在的更新材料，不调用模型。写入沿用 `idempotency` 表和 `X-Client-Request-Id`。
 
 Bridge 的 `workspace` action 读操作不缓存；写操作把完整脱敏 body、HTTP 方法和请求 ID 放入离线队列，重试沿用原请求 ID。409 冲突直接返回当前状态详情，队列补发遇到 409 后保留为 blocked，不自动覆盖。阶段 2 使用独立 `MYOPC_DATA_DIR` 和 `OPC_HOME` 验证，未接入页面或服务器。
+
+## 当前状态工作区页面（阶段 3 第一轮）
+
+`app/workspace-view.tsx` 是页面层的只读组合视图，不另建一套存储。挂载后并行读取 `/workspace/subjects`、四个按 `board` 限定的 `/workspace/context` 和 `/agent/bootstrap`；`app/page.tsx` 只负责保留旧导航与切换入口。这样页面可以同时展示四个板块，又不会把所有个人内容隐式注入某个项目。
+
+- 「变化总览」只把恢复摘要里明确的 `planned / reported / verified / blocked` 映射为进行中、已完成、受阻；普通接口调用、测试和实现记录收在可展开区域。需要用户决定的区域只读取当前 workspace 记录里的 `question` 或 `needs_user_decision`，没有记录时明确显示暂无，不把普通问题升级成审批。
+- 四个板块分别展示主题数量、当前记录摘要、来源时间和空状态。`personal`、`personal_project`、`enterprise_project`、`media` 只按主题主归属筛选；主题间关联通过显式 `subject` 引用点击跳转，不复制正文。知识、工具、图谱和旧业务入口仍由原导航保留。
+- 主题详情把 `current`、来源 / 来源警告、跨板块引用和 `history` 分开呈现；历史与技术记录使用原接口返回，不在客户端重写当前 head。来源状态区分可追溯、缺失和待解析，并显示观察 / 更新时间与可见的提交信息。
+- 「当前理解」标明用户表达、执行报告和模型推断；页面不生成个人画像，也不提供正文编辑器。更正入口只给出主题 ID、slot / 记录 ID 和来源定位方式，实际更正回到 Codex 入口追加记录，保留历史。
+- 本轮页面没有新增数据库表、依赖或写接口；生产写入仍通过既有 Bridge / workspace API 完成，空板块不根据其它板块或旧知识条目自动创建主题。
 
 ## 数据表
 
