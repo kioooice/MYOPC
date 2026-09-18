@@ -1,9 +1,28 @@
 # 当前状态
 
-## 2026-09-18 一人公司改造：设计完成，尚未实施
+## 2026-09-18 一人公司改造阶段 2：信息承接与当前状态已完成
+
+- 阶段 2/5 已完成；阶段 3 页面重组、阶段 4 反馈生成、阶段 5 真实使用与部署均未开始。本轮没有修改主页面、服务器或已安装 Bridge。
+- 新增 migration 15 与 `lib/workspace/`：四板块主题、显式引用、追加历史记录、`subject_id + slot` 当前 heads、`history / set_current / clear_current` 原子写入、revision / expected-current 冲突、观察时间冲突、幂等回放和清除后不回退。
+- 新 API：`/api/v1/workspace/subjects`、`/workspace/subjects/:id`、`/workspace/records/:id`、`/workspace/context`、`/workspace/export`；context 要求显式范围，只从 heads 组装当前内容，历史和来源单独标注，并报告缺失引用与可能更新的知识 / 项目材料。
+- Bridge 新增 `workspace` action（subjects / subject / create / update / record / record-detail / context / export）；写入带 `X-Client-Request-Id`，网络失败保存完整脱敏载荷入队，409 直接可见且不自动覆盖，队列补发遇 409 后标记 blocked。
+
+### 本地验证
+
+- `npm test`：91 项通过（含阶段 2 持久化、migration 重开、heads 冲突 / 幂等 / clear、来源提示、context、导出和 Bridge 队列验证）。
+- `npm run lint`、`npx tsc --noEmit`、`npm run build` 通过。
+- 独立临时 `MYOPC_DATA_DIR` + 本地 HTTP 实例实测合成流程：创建主题 → 记录 A → 记录 B → 过期 head 返回 409 → context 只返回 B → clear 后 current 为空 → 按主题导出；Bridge 离线创建入队，服务恢复后沿用同一 request ID 补发并清队列。
+
+### 限制与遗留
+
+- 仅本地验证，未部署服务器，也未覆盖已安装的全局 Bridge 副本；后续如需使用需按 `bridge/README.md` 重新安装 / 指向本地实例。
+- 来源读取是确定性提示：知识条目和项目事件可查，文件只核对存在与修改时间，URL 只标为未解析；不联网、不调用模型、不自动把来源材料改写为当前状态。
+- 页面没有接入 workspace 数据，阶段 3 才讨论首页与四板块页面；本轮也没有导入真实个人内容。
+
+## 2026-09-18 阶段 2 执行前的设计交接（历史）
 
 - 用户确认产品以个人借助 AI 实现目标为中心，一级板块为个人、个人项目、企业项目、自媒体。
-- 统一执行入口为 [DELIVERY_PLAN.md](DELIVERY_PLAN.md)，当前阶段 1/5 完成，阶段 2/5 待执行；下一对话由用户选择 Luna，完成信息承接与当前状态后返回原对话讨论。
+- 统一执行入口为 [DELIVERY_PLAN.md](DELIVERY_PLAN.md)；本节保留阶段 2 执行前的设计交接背景，当前完成坐标以上方阶段 2 记录为准。
 - 本轮只更新方案和交接文档，没有修改应用代码、数据库、已安装 Bridge 或服务器。运行功能仍以以下 V0.2 记录和现场状态为准。
 - 已核对本地与远端 main 在规划开始时均为 6c3a22e；既有未跟踪 `.playwright-cli/`、`work/` 保留。文档核查不等同于应用测试。
 - 文档中不包含本次对话的私人财务、联系方式或简历内容。阶段 2 使用合成样例与独立本地运行目录。

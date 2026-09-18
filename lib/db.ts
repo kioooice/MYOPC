@@ -314,6 +314,44 @@ export function getDb() {
   addColumn("knowledge_candidates", "resolved_at", "TEXT");
   instance.exec("CREATE INDEX IF NOT EXISTS idx_knowledge_candidates_resolved ON knowledge_candidates(status, resolved_at)");
   instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (14, ?)").run(new Date().toISOString());
+  // 一人公司改造阶段 2：主题、历史记录与明确的当前状态。
+  instance.exec(`CREATE TABLE IF NOT EXISTS workspace_subjects (
+    id TEXT PRIMARY KEY,
+    board TEXT NOT NULL,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    revision INTEGER NOT NULL DEFAULT 1,
+    references_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`);
+  instance.exec(`CREATE TABLE IF NOT EXISTS workspace_records (
+    id TEXT PRIMARY KEY,
+    subject_id TEXT NOT NULL REFERENCES workspace_subjects(id),
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    rationale TEXT,
+    references_json TEXT NOT NULL DEFAULT '[]',
+    origin TEXT NOT NULL,
+    assertion TEXT NOT NULL,
+    source_locator TEXT,
+    observed_at TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    slot TEXT,
+    replaces_id TEXT REFERENCES workspace_records(id)
+  )`);
+  instance.exec(`CREATE TABLE IF NOT EXISTS workspace_heads (
+    subject_id TEXT NOT NULL REFERENCES workspace_subjects(id),
+    slot TEXT NOT NULL,
+    record_id TEXT NOT NULL REFERENCES workspace_records(id),
+    PRIMARY KEY (subject_id, slot)
+  )`);
+  instance.exec("CREATE INDEX IF NOT EXISTS idx_workspace_subjects_board_status ON workspace_subjects(board, status, updated_at)");
+  instance.exec("CREATE INDEX IF NOT EXISTS idx_workspace_records_subject_time ON workspace_records(subject_id, observed_at DESC, recorded_at DESC)");
+  instance.exec("CREATE INDEX IF NOT EXISTS idx_workspace_records_slot ON workspace_records(subject_id, slot, observed_at DESC)");
+  instance.exec("CREATE INDEX IF NOT EXISTS idx_workspace_heads_record ON workspace_heads(record_id)");
+  instance.prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (15, ?)").run(new Date().toISOString());
   return instance;
 }
 

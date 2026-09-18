@@ -3,6 +3,30 @@
 原始阶段记录只有这一份，按日期追加；`docs/STATUS.md` 只写当前状态，覆盖式更新。
 跨项目的整理与提炼交给独立知识仓库 `kioooice/MYOPC-Knowledge`，这里不重复维护。
 
+## 2026-09-18 一人公司改造阶段 2
+
+**新增进展**
+
+- 在 migration 15 中新增 `workspace_subjects`、`workspace_records`、`workspace_heads`；`lib/workspace/service.ts` 提供四板块主题、显式引用、历史记录、当前 head、来源读取、context 与 export。
+- 新增 workspace API 和 Bridge action。写入继续使用现有 idempotency 表；Bridge 发送请求 ID、脱敏 body 并支持离线队列，409 冲突不会自动覆盖。
+- `docs/ARCHITECTURE.md` 与 `bridge/README.md` 已补充实际接口、状态语义和局部验证用法；TASKS / STATUS 已移动到阶段 2 完成坐标。
+
+**关键决策与理由**
+
+- 当前状态不使用整段覆盖文本，而用主题内稳定 slot 指向记录；这样延迟到达的旧观察只能留在 history，不能凭入库时间回退当前事实。
+- context 必须显式指定主题、板块或绑定仓库；来源只做可追踪提示，不由服务端猜测项目归属、发布完成或个人判断。
+- 阶段 2 只使用独立本地数据目录和合成样例，不导入真实个人内容、不修改页面、不部署服务器。
+
+**已验证**
+
+- `npm test` 91 项、`npm run lint`、`npx tsc --noEmit`、`npm run build` 通过。
+- 独立本地 HTTP + SQLite 流程覆盖创建、幂等回放、当前状态替换、过期 head 409、context 当前 / history 分离、clear 不回退、按主题导出；Bridge 离线入队后恢复补发成功。
+
+**未解决 / 未验证**
+
+- 页面尚未读取 workspace，服务器和已安装 Bridge 未更新；这些属于阶段 3 / 5 讨论范围。
+- 文件与 URL 引用暂不执行远程读取；反馈生成、平台实时指标、真实个人数据导入均未做。
+
 ## 2026-09-15 开发知识复用 V0（context / result）
 
 **新增进展**

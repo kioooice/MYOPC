@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { acceptVersion, BusinessError, createCapture, createDecision, createDeliverable, createDraft, createFeedback, createMethod, createProject, createProjectLocation, createTrial, createVersion, getAssets, getCapture, getCaptureFile, getCaptures, getContext, getDashboard, getEvents, getMethod, getMethods, getProject, getProjects, getLibrary, startTrial, updateCapture, updateProject, updateTrial } from "@/lib/business";
 import { KnowledgeError } from "@/lib/knowledge/repo";
 import { bootstrapAgent, generateKnowledgeNote, getKnowledgeDetail, getKnowledgeOverview, getKnowledgeReuseOverview, getProgressRecord, processKnowledgeNotes, queryAgentContext, resolveCandidate, submitAgentResult, syncKnowledge } from "@/lib/knowledge/service";
+import { WorkspaceError, appendRecord, buildContext, createSubject, exportWorkspace, getRecord, getSubject, listSubjects, updateSubject } from "@/lib/workspace/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,7 @@ type Context = { params: Promise<{ segments: string[] }> };
 
 function errorResponse(error: unknown) {
   if (error instanceof BusinessError) return NextResponse.json({ error: error.code, message: error.message, details: error.details }, { status: error.status });
+  if (error instanceof WorkspaceError) return NextResponse.json({ error: error.code, message: error.message, details: error.details }, { status: error.status });
   if (error instanceof KnowledgeError) {
     const notFound = ["knowledge_entry_not_found", "candidate_not_found", "progress_record_not_found"];
     const badRequest = ["knowledge_directory_missing", "task_required", "candidate_id_required", "candidate_status_invalid", "candidate_note_required"];
@@ -38,6 +40,34 @@ export async function GET(request: NextRequest, context: Context) {
   const { segments } = await context.params;
   try {
     if (segments[0] === "health") return NextResponse.json({ status: "ok", persistence: "sqlite", release: process.env.MYOPC_RELEASE || "unknown" });
+    if (segments[0] === "workspace" && segments[1] === "subjects" && segments[2]) {
+      const detail = getSubject(segments[2], {
+        includeHistory: ["1", "true", "yes"].includes(request.nextUrl.searchParams.get("history") || ""),
+        limit: request.nextUrl.searchParams.get("limit") || undefined,
+        offset: request.nextUrl.searchParams.get("offset") || undefined,
+      });
+      if (!detail) return NextResponse.json({ error: "subject_not_found", message: "主题不存在" }, { status: 404 });
+      return NextResponse.json(detail);
+    }
+    if (segments[0] === "workspace" && segments[1] === "subjects") {
+      return NextResponse.json(listSubjects({
+        board: request.nextUrl.searchParams.get("board") || undefined,
+        status: request.nextUrl.searchParams.get("status") || undefined,
+        query: request.nextUrl.searchParams.get("q") || undefined,
+      }));
+    }
+    if (segments[0] === "workspace" && segments[1] === "records" && segments[2]) {
+      const detail = getRecord(segments[2]);
+      if (!detail) return NextResponse.json({ error: "record_not_found", message: "记录不存在" }, { status: 404 });
+      return NextResponse.json(detail);
+    }
+    if (segments[0] === "workspace" && segments[1] === "export") {
+      return NextResponse.json(exportWorkspace({
+        subjectId: request.nextUrl.searchParams.get("subject_id") || undefined,
+        board: request.nextUrl.searchParams.get("board") || undefined,
+        all: request.nextUrl.searchParams.get("all") || undefined,
+      }));
+    }
     if (segments[0] === "dashboard") return NextResponse.json(getDashboard());
     if (segments[0] === "library") return NextResponse.json(getLibrary(request.nextUrl.searchParams.get("q") || ""));
     if (segments[0] === "assets") return NextResponse.json(getAssets(request.nextUrl.searchParams.get("q") || ""));
@@ -109,6 +139,15 @@ export async function POST(request: NextRequest, context: Context) {
       const result = bootstrapAgent(body);
       return NextResponse.json(result, { status: 200 });
     }
+    if (key === "workspace/subjects") {
+      const result = createSubject(body, requestId);
+      return NextResponse.json(result.body, { status: result.status });
+    }
+    if (key === "workspace/records") {
+      const result = appendRecord(body, requestId);
+      return NextResponse.json(result.body, { status: result.status });
+    }
+    if (key === "workspace/context") return NextResponse.json(buildContext(body), { status: 200 });
     if (segments[0] === "knowledge" && segments[1] === "candidates" && segments[2] && segments[3] === "resolve") {
       const result = resolveCandidate({ ...body, candidate_id: body.candidate_id ?? segments[2] });
       return NextResponse.json(result, { status: 200 });
@@ -137,6 +176,14 @@ export async function PATCH(request: NextRequest, context: Context) {
   const { segments } = await context.params;
   const body = await readBody(request);
   const requestId = request.headers.get("x-client-request-id") || undefined;
+  if (segments[0] === "workspace" && segments[1] === "subjects" && segments[2]) {
+    try {
+      const result = updateSubject(segments[2], body, requestId);
+      return NextResponse.json(result.body, { status: result.status });
+    } catch (error) {
+      return errorResponse(error);
+    }
+  }
   return respond(() => {
     if (segments[0] === "captures" && segments[1]) return updateCapture(segments[1], body, requestId);
     if (segments[0] === "projects" && segments[1]) return updateProject(segments[1], body, requestId);

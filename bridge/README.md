@@ -12,6 +12,15 @@ opc result  --event environment --title "本机 runtime 已选择" --content "Ru
 opc result  --event blocker --title "渲染修复不可持久" --content "重装发行版后要重做修复" --next "补一个修复脚本"
 opc candidates                             # 查看待整理候选经验
 opc candidates --id cand-x --status merged --note "已合并到 safe-deploy" --entry safe-deploy --commit abc1234
+opc workspace --action subjects [--board media]
+opc workspace --action subject --id synthetic-media
+opc workspace --action create --stdin --request-id request-1
+opc workspace --action update --id synthetic-media --stdin --request-id request-2
+opc workspace --action record --stdin --request-id request-3
+opc workspace --action record-detail --id record-id
+opc workspace --action context --stdin
+opc workspace --action export --id synthetic-media
+opc workspace --action export --all
 opc doctor
 ```
 
@@ -57,8 +66,9 @@ powershell -ExecutionPolicy Bypass -File D:\Projects\myopc\bridge\install.ps1
 
 - 只依赖 Node 内置模块，不需要在项目里安装依赖。
 - `context` 与 `bootstrap` 都是“宁可不用”的：没有相关知识时返回 `{"used":false,"reason":"no_relevant_knowledge"}`，没有记录时返回 `reason:"no_records"`。
+- `workspace` 直接对应阶段 2 的主题、记录、当前状态、上下文和导出 API；读操作不缓存，stdin 内容按 API body 发送，写操作自动生成或使用 `--request-id` 并通过 `X-Client-Request-Id` 保证幂等。
 - `bootstrap` 结果默认缓存 10 分钟（同仓库 + 分支）；`opc result` 成功后清掉该仓库的缓存，需要刷新时加 `--force`。
-- 回流失败时返回 `{"saved":false,"queued":true,...}` 并把这次提交放进待重传队列；下一次任意命令会补发最多 3 条，每条最多重试 20 次，不无限重试、不阻断开发。
+- 回流或 workspace 写入失败时返回 `{"saved":false,"queued":true,...}` 并把完整 body、请求 ID 和 HTTP 方法放进待重传队列；下一次任意命令会补发最多 3 条，每条最多重试 20 次，不无限重试、不阻断开发。workspace 的 409 会直接返回冲突详情，不自动覆盖；队列补发遇到 409 会保留项目并标记为 blocked，不再自动重试。
 - 网络失败、服务器不可用、模型未配置都不阻塞开发：命令始终以退出码 0 结束，并返回 `bridge_error` 之类的可读原因。
 - 同一次回流重试带同一个 `submission_id`，服务端按（submission_id, 序号）判重，不会重复写入；更正用 `--supersedes <记录 id>`，旧记录保留历史。
 

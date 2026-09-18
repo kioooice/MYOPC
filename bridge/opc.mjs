@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// OPC Bridge：Codex 在开发任务里自动调用的命令（context / result / bootstrap / candidates）。
+// OPC Bridge：Codex 在开发任务里自动调用的命令（context / result / bootstrap / candidates / workspace）。
 // 只依赖 Node 内置模块；任何失败都返回可解析的 JSON 且退出码为 0，绝不阻塞开发任务。
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -23,6 +23,11 @@ const HELP = `OPC Bridge
   opc result  --event blocker --title "..." --content "..." --next "需要人工确认"
   opc candidates                                  # 查看待整理候选经验
   opc candidates --id cand-x --status merged --note "已合并到 safe-deploy" --entry safe-deploy --commit abc1234
+  opc workspace --action subjects [--board media]
+  opc workspace --action subject --id <subject-id>
+  opc workspace --action create|update|record|context --stdin [--request-id <id>]
+  opc workspace --action record-detail --id <record-id>
+  opc workspace --action export --id <subject-id>|--all
   opc context --stdin / opc result --stdin / opc bootstrap --stdin   # 从 stdin 读取完整 JSON
   opc doctor
 
@@ -300,26 +305,36 @@ export function clearBootstrapCache(repository) {
   } catch { /* 缓存失败不影响开发 */ }
 }
 
-function authHeaders(config) {
+function authHeaders(config, extra = {}) {
   const headers = { "content-type": "application/json" };
   if (config.auth?.username) headers.authorization = `Basic ${Buffer.from(`${config.auth.username}:${config.auth.password ?? ""}`).toString("base64")}`;
-  return headers;
+  return { ...headers, ...extra };
 }
 
-async function requestJson(config, method, path, body) {
+export class BridgeHttpError extends Error {
+  constructor(message, status, payload) {
+    super(message);
+    this.name = "BridgeHttpError";
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
+async function requestJson(config, method, path, body, options = {}) {
   const url = `${String(config.serverUrl).replace(/\/+$/, "")}${path}`;
   const timeoutMs = Number(config.timeoutMs) > 0 ? Number(config.timeoutMs) : 60000;
-  const response = await fetch(url, { method, headers: authHeaders(config), body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) });
+  const headers = { ...(options.requestId ? { "x-client-request-id": String(options.requestId) } : {}), ...(options.headers || {}) };
+  const response = await fetch(url, { method, headers: authHeaders(config, headers), body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) });
   const text = await response.text();
   let payload = null;
   try { payload = JSON.parse(text); } catch { payload = null; }
-  if (!response.ok) throw new Error(payload?.message || `OPC 返回 HTTP ${response.status}`);
+  if (!response.ok) throw new BridgeHttpError(payload?.message || `OPC 返回 HTTP ${response.status}`, response.status, payload);
   if (!payload) throw new Error("OPC 返回的不是 JSON");
   return payload;
 }
 
-function postJson(config, path, body) {
-  return requestJson(config, "POST", path, body);
+function postJson(config, path, body, options = {}) {
+  return requestJson(config, "POST", path, body, options);
 }
 
 function getJson(config, path) {
@@ -373,26 +388,116 @@ export async function flushPending(config) {
   let attempted = 0;
   let skipped = 0;
   for (const item of items) {
-    if ((item.attempts || 0) >= MAX_QUEUE_ATTEMPTS || attempted >= QUEUE_FLUSH_LIMIT) {
+    if (item.blocked || (item.attempts || 0) >= MAX_QUEUE_ATTEMPTS || attempted >= QUEUE_FLUSH_LIMIT) {
       remaining.push(item);
-      if ((item.attempts || 0) >= MAX_QUEUE_ATTEMPTS) skipped += 1;
+      if (item.blocked || (item.attempts || 0) >= MAX_QUEUE_ATTEMPTS) skipped += 1;
       continue;
     }
     attempted += 1;
     try {
-      await postJson(config, item.path, item.body);
+      await requestJson(config, item.method || "POST", item.path, item.body, { requestId: item.requestId });
       sent += 1;
       // 补发成功后，这个项目的恢复摘要已经过期，清掉缓存让下一次 bootstrap 重新取。
       if (item.path === "/api/v1/agent/result" && item.body?.repository) clearBootstrapCache(String(item.body.repository));
       log({ command: "queue.flush", ok: true, submissionId: item.submissionId });
     } catch (error) {
       const message = error instanceof Error ? error.message : "重传失败";
-      remaining.push({ ...item, attempts: (item.attempts || 0) + 1, lastError: message });
+      if (error instanceof BridgeHttpError && error.status === 409) {
+        remaining.push({ ...item, blocked: true, conflict: error.payload || null, lastError: message });
+        skipped += 1;
+      } else {
+        remaining.push({ ...item, attempts: (item.attempts || 0) + 1, lastError: message });
+      }
       log({ command: "queue.flush", ok: false, submissionId: item.submissionId, message });
     }
   }
   writeQueue(remaining);
   return { sent, remaining: remaining.length, skipped };
+}
+
+function redactWorkspaceValue(value) {
+  if (typeof value === "string") return redactSecrets(value).text;
+  if (Array.isArray(value)) return value.map(redactWorkspaceValue);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, redactWorkspaceValue(item)]));
+  return value;
+}
+
+function workspaceErrorResult(error, requestId) {
+  if (error instanceof BridgeHttpError) {
+    const conflict = error.status === 409;
+    return {
+      saved: false,
+      queued: false,
+      reason: conflict ? "conflict" : "http_error",
+      status: error.status,
+      error: error.payload?.error || (conflict ? "conflict" : "bridge_http_error"),
+      message: error.message,
+      details: error.payload?.details,
+      requestId,
+    };
+  }
+  return { saved: false, queued: true, reason: "bridge_error", requestId, message: error instanceof Error ? error.message : "OPC Bridge 调用失败" };
+}
+
+async function workspaceWrite(config, method, path, body, requestId) {
+  const id = String(requestId || randomUUID());
+  const safeBody = redactWorkspaceValue(body);
+  try {
+    const result = await requestJson(config, method, path, safeBody, { requestId: id });
+    return { ...result, saved: true, queued: false, requestId: id };
+  } catch (error) {
+    if (error instanceof BridgeHttpError && error.status >= 400 && error.status < 500) return workspaceErrorResult(error, id);
+    const message = error instanceof Error ? error.message : "OPC Bridge 调用失败";
+    enqueuePending({ submissionId: id, requestId: id, method, path, body: safeBody, attempts: 1, queuedAt: new Date().toISOString(), lastError: message });
+    return { saved: false, queued: true, reason: "bridge_error", requestId: id, message };
+  }
+}
+
+async function workspaceRead(config, method, path, body) {
+  try {
+    return await requestJson(config, method, path, body);
+  } catch (error) {
+    if (error instanceof BridgeHttpError) return workspaceErrorResult(error);
+    return { used: false, saved: false, queued: false, reason: "bridge_error", message: error instanceof Error ? error.message : "OPC Bridge 调用失败" };
+  }
+}
+
+/** workspace 命令族：读操作不缓存；写操作使用 X-Client-Request-Id 并把网络失败完整入队。 */
+export async function runWorkspace({ flags = {}, config, cwd = process.cwd() }) {
+  if (!config.enabled) return { used: false, saved: false, queued: false, reason: "bridge_disabled", message: "OPC 总开关已关闭，未读写服务器" };
+  const action = String(flags.action || "").trim();
+  if (!action) return { used: false, saved: false, queued: false, reason: "workspace_action_required", message: "workspace需要 --action" };
+  const rawPayload = flags.stdin ? await readStdin() : {};
+  const payload = rawPayload && typeof rawPayload === "object" && !Array.isArray(rawPayload) ? rawPayload : {};
+  const id = flags.id || payload.id || payload.subject_id || payload.record_id || "";
+  const requestId = flags["request-id"] || payload.request_id || payload.client_request_id || randomUUID();
+  const query = new URLSearchParams();
+  if (flags.board) query.set("board", String(flags.board));
+  if (flags.status) query.set("status", String(flags.status));
+  if (flags.q) query.set("q", String(flags.q));
+  if (flags.subject) query.set("subject_id", String(flags.subject));
+  if (flags.all !== undefined) query.set("all", "true");
+  if (action === "subjects") return workspaceRead(config, "GET", `/api/v1/workspace/subjects${query.toString() ? `?${query}` : ""}`);
+  if (action === "subject") {
+    if (!id) return { used: false, saved: false, queued: false, reason: "subject_id_required" };
+    return workspaceRead(config, "GET", `/api/v1/workspace/subjects/${encodeURIComponent(String(id))}`);
+  }
+  if (action === "create") return workspaceWrite(config, "POST", "/api/v1/workspace/subjects", payload, requestId);
+  if (action === "update") {
+    if (!id) return { used: false, saved: false, queued: false, reason: "subject_id_required" };
+    return workspaceWrite(config, "PATCH", `/api/v1/workspace/subjects/${encodeURIComponent(String(id))}`, payload, requestId);
+  }
+  if (action === "record") return workspaceWrite(config, "POST", "/api/v1/workspace/records", payload, requestId);
+  if (action === "record-detail") {
+    if (!id) return { used: false, saved: false, queued: false, reason: "record_id_required" };
+    return workspaceRead(config, "GET", `/api/v1/workspace/records/${encodeURIComponent(String(id))}`);
+  }
+  if (action === "context") return workspaceRead(config, "POST", "/api/v1/workspace/context", redactWorkspaceValue(payload));
+  if (action === "export") {
+    if (id && !query.has("subject_id")) query.set("subject_id", String(id));
+    return workspaceRead(config, "GET", `/api/v1/workspace/export${query.toString() ? `?${query}` : ""}`);
+  }
+  return { used: false, saved: false, queued: false, reason: "workspace_action_invalid", message: `未知 workspace action：${action}` };
 }
 
 function eventPayloads(events, context) {
@@ -607,6 +712,12 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()) {
       process.stdout.write(`${JSON.stringify(result)}\n`);
       return 0;
     }
+    if (command === "workspace") {
+      const result = await runWorkspace({ flags, config, cwd });
+      log({ command, action: flags.action || null, ok: result.saved === true || result.used === true || !result.reason, reason: result.reason ?? null, queued: result.queued === true, durationMs: Date.now() - started, id: randomUUID() });
+      process.stdout.write(`${JSON.stringify({ ...result, ...(flush.sent > 0 ? { flushedPending: flush.sent } : {}) })}\n`);
+      return 0;
+    }
     if (command === "candidates") {
       const result = await runCandidates({ flags, config });
       log({ command, ok: true, pending: Array.isArray(result.pending) ? result.pending.length : 0, resolved: result.resolved === true, durationMs: Date.now() - started, id: randomUUID() });
@@ -624,6 +735,8 @@ export async function main(argv = process.argv.slice(2), cwd = process.cwd()) {
     log({ command, ok: false, message, durationMs: Date.now() - started, id: randomUUID() });
     const fallback = command === "result"
       ? { saved: false, reason: "bridge_error", message }
+      : command === "workspace"
+        ? { saved: false, reason: "bridge_error", queued: false, message }
       : command === "candidates"
         ? { resolved: false, reason: "bridge_error", message }
         : contextFallback("bridge_error", message);

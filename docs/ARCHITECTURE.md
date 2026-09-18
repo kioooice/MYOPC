@@ -17,7 +17,8 @@ MYOPC 是 Next.js 单体应用：React / TypeScript 前端、Node.js 服务端�
 | lib/knowledge/service.ts | 对外服务：同步、列表、详情、生成与批量加工 |
 | lib/knowledge/reuse.ts | 开发知识复用：按任务挑选历史知识、回流任务结果与阶段事件、候选经验与处置 |
 | lib/knowledge/progress.ts | OPC V0.2：项目事件保存、恢复摘要组装、项目最近进展；这一层不调用模型 |
-| bridge/opc.mjs、bridge/install.ps1 | 本地 OPC Bridge：`opc context` / `opc result` / `opc bootstrap` / `opc candidates`，安装后与项目仓库无关 |
+| lib/workspace/types.ts、store.ts、service.ts | 阶段 2：四板块主题、追加历史记录、显式 heads 当前状态、来源解析、上下文组装与 JSON 导出 |
+| bridge/opc.mjs、bridge/install.ps1 | 本地 OPC Bridge：`opc context` / `opc result` / `opc bootstrap` / `opc candidates` / `opc workspace`，安装后与项目仓库无关 |
 | lib/business.ts、lib/db.ts | 历史业务读写与数据库结构 |
 | scripts/knowledge-sync.ts | 命令行同步与加工（可定时执行） |
 
@@ -60,6 +61,14 @@ Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知�
 
 上下文调用记录写在通用 `events` 表（`entity_type='agent'`、`kind='agent.context.queried'`），既用于近期重复调用 Gate，也是空间页「知识复用」面板的数据来源；候选处置另写 `agent.candidate.resolved` 事件。Bridge 侧另有 `%LOCALAPPDATA%\OPC\` 下的缓存、日志与待重传队列，项目仓库不产生任何 OPC 文件。项目详情页的「最近进展」读取同仓库的 `project_events`，没有记录时不显示该区块。
 
+## 信息承接与当前状态（阶段 2）
+
+`workspace_subjects` 是不依赖 Git 仓库的主题身份，`board` 固定为 `personal` / `personal_project` / `enterprise_project` / `media`；`references_json` 只保存显式的 subject、knowledge、repository、file、url 引用。`workspace_records` 追加历史事实，`workspace_heads` 以 `subject_id + slot` 指向当前有效记录。`history` 不改变 head，`set_current` 与 `clear_current` 都要求调用方提供 `expected_current_id`，服务端在同一事务中校验、追加和移动 / 删除 head；过期 head 与过早的 `observed_at` 返回 409，旧记录保留且不会在 clear 后自动恢复。
+
+阶段 2 API 位于 `/api/v1/workspace`：主题创建 / 乐观更新、记录追加、主题与记录读取、显式范围的确定性 context、带范围保护的 JSON export。`context` 只从 heads 组装当前内容，历史以明确的 history/source 区域返回；显式引用的知识条目、项目事件、文件与 URL 逐项给出可用 / 缺失 / 未解析提示，并标出可能存在的更新材料，不调用模型。写入沿用 `idempotency` 表和 `X-Client-Request-Id`。
+
+Bridge 的 `workspace` action 读操作不缓存；写操作把完整脱敏 body、HTTP 方法和请求 ID 放入离线队列，重试沿用原请求 ID。409 冲突直接返回当前状态详情，队列补发遇到 409 后保留为 blocked，不自动覆盖。阶段 2 使用独立 `MYOPC_DATA_DIR` 和 `OPC_HOME` 验证，未接入页面或服务器。
+
 ## 数据表
 
 | 表 | 内容 |
@@ -70,6 +79,9 @@ Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知�
 | agent_task_results | 回流批次：仓库、任务、改动 / 验证 / 发现、用到的知识与效果、一句话总结，加 `submission_id / machine / branch / commit_sha / dirty / event_count` |
 | project_events | 项目事件（V0.2）：类型、内容、理由、状态、验证方式、证据、下一步、机器 / 分支 / 提交 / 脏标记、`supersedes_id / superseded_by`（更正历史） |
 | knowledge_candidates | 候选经验：标题、内容、依据、建议、来源仓库与任务、状态（pending / merged / added / hold / discarded）与处置信息 |
+| workspace_subjects | 阶段 2 主题身份：四板块、状态、revision、显式引用与时间 |
+| workspace_records | 阶段 2 追加记录：来源、断言、观察时间、slot 与替换关系 |
+| workspace_heads | 阶段 2 当前状态指针：主题 + slot → 当前记录 |
 
 前端不直接写库，全部经 HTTP 接口；模型只由服务端调用。
 
@@ -88,6 +100,10 @@ Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知�
 | GET | /agent/events/:id | 单条项目事件详情 |
 | GET | /knowledge/reuse | 知识复用观察数据（最近调用、待整理与已处理候选经验、知识使用情况） |
 | POST | /knowledge/candidates/:id/resolve | 候选经验处置：merged / added / hold / discarded + 理由、条目与知识仓库提交 |
+| POST | /workspace/subjects、/workspace/records、/workspace/context | 阶段 2：主题创建、记录 / 当前状态原子写入、确定性上下文组装 |
+| PATCH | /workspace/subjects/:id | 主题标题、状态、显式引用的乐观更新 |
+| GET | /workspace/subjects、/workspace/subjects/:id、/workspace/records/:id | 主题范围列表、当前状态 / 可选历史、单条记录与来源 |
+| GET | /workspace/export | 按 subject / board 导出；全量导出必须显式 `all=true` |
 | GET | /health、/dashboard、/library、/events | 运行与历史数据概览 |
 | GET | /captures、/captures/:id、/captures/:id/file | 历史素材读取 |
 | GET | /methods、/methods/:id、/projects、/projects/:id | 历史方法、项目读取 |
