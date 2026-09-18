@@ -1,24 +1,24 @@
 # 当前状态
 
-## 2026-09-18 一人公司改造阶段 2：信息承接与当前状态已完成
+## 2026-09-19 阶段 2 验收补修完成
 
-- 阶段 2/5 已完成并部署服务器；阶段 3 页面重组、阶段 4 反馈生成、阶段 5 真实使用验收未开始。主页面尚未改动。
-- 新增 migration 15 与 `lib/workspace/`：四板块主题、显式引用、追加历史记录、`subject_id + slot` 当前 heads、`history / set_current / clear_current` 原子写入、revision / expected-current 冲突、观察时间冲突、幂等回放和清除后不回退。
-- 新 API：`/api/v1/workspace/subjects`、`/workspace/subjects/:id`、`/workspace/records/:id`、`/workspace/context`、`/workspace/export`；context 要求显式范围，只从 heads 组装当前内容，历史和来源单独标注，并报告缺失引用与可能更新的知识 / 项目材料。
-- Bridge 新增 `workspace` action（subjects / subject / create / update / record / record-detail / context / export）；写入带 `X-Client-Request-Id`，网络失败保存完整脱敏载荷入队，409 直接可见且不自动覆盖，队列补发遇 409 后标记 blocked。
+- 阶段 2/5（S2.1—S2.5）已完成并部署服务器，修复提交为 `c127653`，运行版本同步为 `c127653`；阶段 3 页面重组、阶段 4 反馈生成、阶段 5 真实使用验收未开始，主页面未改动。
+- `buildContext` 现在优先保证 `subjects[].current`：`items` 改为当前记录的紧凑索引，避免正文重复占用预算；历史与来源按剩余字符预算附加，并分别返回 `history_omitted_count` / `sources_omitted_count` 与截断标记。
+- 超预算时保留可接续的最小当前状态并标记 `current_truncated` / `budget_exceeded`，已有当前记录不再误报为 `reason=no_records`。`omitted_ids` 只包含因 limit 或字符预算省略的已存在主题，`missing_subject_ids` / `missing_count` 单独报告缺失主题，`omitted_count` 与去重 ID 一致。
+- 新 API、旧 API、Bridge 写入幂等、current/history、clear 和冲突语义保持不变；返回契约说明已同步到 [DELIVERY_PLAN.md](DELIVERY_PLAN.md)。
 
 ### 本地验证
 
-- `npm test`：91 项通过（含阶段 2 持久化、migration 重开、heads 冲突 / 幂等 / clear、来源提示、context、导出和 Bridge 队列验证）。
-- `npm run lint`、`npx tsc --noEmit`、`npm run build` 通过。
-- 独立临时 `MYOPC_DATA_DIR` + 本地 HTTP 实例实测合成流程：创建主题 → 记录 A → 记录 B → 过期 head 返回 409 → context 只返回 B → clear 后 current 为空 → 按主题导出；Bridge 离线创建入队，服务恢复后沿用同一 request ID 补发并清队列。
+- `npm test`：95 项通过（新增长当前记录、历史 / 来源较多、最小预算、limit 省略及缺失主题回归）。`npm run lint`、`npx tsc --noEmit`、`npm run build` 均通过。
+- 独立临时 `MYOPC_DATA_DIR` + HTTP + CLI 实测：3000 字 synthetic 当前记录默认 `used=true`、正文完整、响应约 4758 字；6 个同板块主题 `limit=2` 返回 2 个主题、`omitted_count=4` 和 4 个省略主题 ID；`opc workspace` CLI 返回同样语义。测试数据未写入生产。
 
-### 限制与遗留
+### 服务器增量部署与限制
 
-- 服务器 `http://124.222.190.89:3010` 已部署 `c6699a7`（包含阶段 2 提交 `2be782f`，额外排除 Docker 构建中的环境配置）。全局 Bridge 已更新，原连接配置保持不变，新接口当前没有真实主题数据。
-- 服务器生产构建通过；隔离容器测试 90/91 通过，剩余 Windows 路径用例在本机 Bridge 11/11 测试中通过。迁移至 15，数据库完整性与外键检查通过，原 24 张表记录数未减少。公网带认证的首页、健康、知识、主题与导出接口均为 200；浏览器通过 SSH 隧道读取服务器首页及项目详情，控制台仅 favicon.ico 404。
-- 来源读取是确定性提示：知识条目和项目事件可查，文件只核对存在与修改时间，URL 只标为未解析；不联网、不调用模型、不自动把来源材料改写为当前状态。
-- 页面没有接入 workspace 数据，阶段 3 才讨论首页与四板块页面；本轮也没有导入真实个人内容。
+- 服务器 `http://124.222.190.89:3010` 已切换到 `c127653`；切换前 SQLite backup API 备份为 `/opt/backups/opc/pre-workspace-fix-20260918T182748Z/myopc.sqlite`，完整性 `ok`、外键错误 0；原运行镜像保留回退标签 `opc-myopc:rollback-c6699a7-20260918`。
+- 容器构建、启动和健康检查通过：`restarts=0`，认证 `opc doctor` 返回 `release=c127653`；认证旧知识接口 HTTP 200，新 workspace subjects/context 接口可读且当前生产 workspace 仍为 0 个主题；未认证公网请求返回 401，Basic Auth 仍生效；生产数据库 migration 15、workspace 三张表均保持 0 条记录。
+- 服务器镜像仍排除 `.env` / `.env.local`，运行配置未打印、未提交；本地未跟踪 `.playwright-cli/`、`work/` 和服务器原有 `docker-compose.prod.yml` 均保留。
+- Linux 隔离测试为 93/95：失败的 2 个既有 Bridge 用例都依赖 Windows 工作目录 / `D:\Projects\...` 路径；本机 Windows 95/95 全通过，未为平台差异扩大业务改造。
+- 来源读取仍是确定性提示；页面没有接入 workspace，阶段 3 才讨论首页与四板块页面；阶段 4 反馈和服务器部署以外的真实经营价值未验证。
 
 ## 2026-09-18 阶段 2 执行前的设计交接（历史）
 

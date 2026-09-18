@@ -3,6 +3,30 @@
 原始阶段记录只有这一份，按日期追加；`docs/STATUS.md` 只写当前状态，覆盖式更新。
 跨项目的整理与提炼交给独立知识仓库 `kioooice/MYOPC-Knowledge`，这里不重复维护。
 
+## 2026-09-19 阶段 2 验收补修
+
+**新增进展**
+
+- 按验收事件 `evt-20260918-ac213b` 修复 `lib/workspace/service.ts` 的 `buildContext`：当前状态优先进入预算，`items` 只保留紧凑索引；历史和来源按剩余空间逐项附加，保留各自截断数量；limit 省略的主题 ID 与缺失主题 ID 分开返回。
+- 预算连最小响应也无法完整容纳时，返回最小当前状态并标记 `budget_exceeded`，不再把已有 current 误报为 `no_records`。契约说明同步到 `docs/DELIVERY_PLAN.md`，没有修改页面或阶段 3/4 范围。
+
+**关键决策与理由**
+
+- 继续保留默认 `max_chars=6000` 和硬上限，不用单纯放大预算掩盖问题；完整正文只在 `subjects[].current` 保留，重复索引与历史 / 来源附加信息优先压缩，保证状态可接续并明确提示不完整部分。
+- `omitted_count` 只统计 `omitted_ids` 中去重后的已存在主题；请求 ID 找不到的主题另列 `missing_subject_ids` / `missing_count`，避免数量与语义混淆。
+
+**已验证**
+
+- 提交 `c127653` 已推送 `main`。本机 `npm test` 95 项、lint、`tsc --noEmit`、生产构建通过；新增回归覆盖 3000 字当前记录、历史 / 来源较多、字符预算确实装不下、limit 省略和缺失主题。
+- 隔离临时 SQLite 的 HTTP + CLI 实测：3000 字当前记录默认 `used=true`、正文完整、响应约 4758 字；6 个同板块主题 `limit=2` 返回 2 个主题和 4 个去重省略 ID；未写入生产数据。
+- 服务器切换前用 SQLite backup API 备份 `/opt/backups/opc/pre-workspace-fix-20260918T182748Z/myopc.sqlite`，`integrity=ok`、无外键错误、migration 15；构建成功后切换 `c127653`，原镜像保留 `opc-myopc:rollback-c6699a7-20260918`，容器重启数 0。
+- 服务器认证 health 返回 `release=c127653`，旧知识接口 HTTP 200，新 workspace subjects/context 可读且生产 workspace 仍为空，未认证公网请求为 401；镜像内未包含 `.env` / `.env.local`。Linux 隔离测试 93/95，两个失败是既有 Bridge Windows 路径假设；本机 Windows 95/95 通过。
+- 关键进展已回流 OPC：本地修复事件 `evt-20260918-dcc946`，完整交付待在部署核对后回流。
+
+**未解决 / 未验证**
+
+- Linux Bridge 的两个 Windows 路径测试仍未跨平台化，本轮按项目要求不扩展无关改造；阶段 3 页面、阶段 4 反馈和真实经营价值仍未开始验证。
+
 ## 2026-09-18 一人公司改造阶段 2
 
 **新增进展**
