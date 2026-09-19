@@ -1,5 +1,18 @@
 # 当前状态
 
+## 2026-09-19 验收补齐（当前收口）
+
+- 知识仓库 `c4057f0` 已推送并同步到生产：`updated=7、unchanged=27、total=34`，7/7 定向阅读说明完成，`pendingNotes=0`。首轮 16 条 notes 如实记录为 10 条修改、6 条复查保留；本次补强 4 条关键 notes。
+- 应用 `cfe1adf` 已推送并部署。缓存按已返回候选内容 / 阅读说明版本失效，`no_relevant_knowledge` 按候选池 / 同步版本失效，选择理由保留；调用面板改为“返回条数”，效果分类标明模型或调用方提供且未独立验证。
+- 生产 `release=cfe1adf`、health `ok`、容器重启数 0。部署前 / 后备份为 `/opt/backups/opc/pre-knowledge-cache-cfe1adf-20260919T051729Z/myopc.sqlite`、`/opt/backups/opc/post-knowledge-cache-cfe1adf-20260919T051840Z/myopc.sqlite`；两次完整性 `ok`、外键错误 0。
+- 浏览器已核对空间指标和图谱详情；通用说明区已移除，列表摘要、图谱原图 / 原文 / 边界 / 相关知识 / 来源可读，控制台 errors/warnings 0。Easel `7860 -> 7861`、Karakeep `3020 -> 3021` 入口已只读确认，认证后内容未核对。
+
+### 当前遗留与边界
+
+- 生产仍有 31 条待整理候选、0 条已处置；不在本轮做候选处置或页面反馈生成。
+- `task-20260919-009` 是一次接口验证，三条效果均为 `unknown`；`task-20260919-013` 是回流整理记录，不是第二次真实业务闭环。没有采用、有效性或效率对照。
+- 本轮停在现有知识复用 / 图谱验收，不进入页面第二轮重组或阶段 4/5；其他机器登录态、Easel/Karakeep 认证后内容仍未核对。
+
 ## 2026-09-19 空间知识可用性与图谱复用（当前收口）
 
 - 知识仓库已推送 `4309dfc`：16 条变更笔记已整理，14 个项目与 3 个工具完成有界核对，现有 `kill-doc-content-pipeline` 图谱保留；同步统计 `0/16/18/0/34`（added / updated / unchanged / removed / total），16/16 阅读说明重做完成，`pendingNotes=0`。

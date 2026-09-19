@@ -3,6 +3,27 @@
 原始阶段记录只有这一份，按日期追加；`docs/STATUS.md` 只写当前状态，覆盖式更新。
 跨项目的整理与提炼交给独立知识仓库 `kioooice/MYOPC-Knowledge`，这里不重复维护。
 
+## 2026-09-19 验收补齐：知识边界、缓存和指标语义
+
+**新增进展**
+
+- 按源讨论任务验收补齐：首轮 16 条 notes 的去向改为如实记录为“10 条修改、6 条复查保留”，本次又定向补强 `project-memory-file`、`model-tier-routing`、`dev-network-troubleshooting`、`ai-collaboration-low-frequency` 4 条关键笔记；恢复了 dev-network 的固定历史二手出处，并保留 safe-deploy 的固定历史状态 / 当前部署文档依据。
+- 应用提交 `cfe1adf` 增加按候选内容 / 阅读说明版本的缓存失效：命中缓存核对已返回条目，`no_relevant_knowledge` 核对候选池与同步版本，缓存仍保留模型选择理由；空间页移除新增通用说明区，调用指标改为“返回条数”，效果改为“模型或调用方分类（未独立验证）”。
+- 服务器只读核对确认 Easel 进程 `127.0.0.1:7861` 经 OpenResty `7860` 代理、Karakeep web `127.0.0.1:3021` 经 OpenResty `3020` 代理；两者未登录均返回对应 Basic Auth，未读取凭证或登录内容。其他 10 个项目已做简洁保留 / 待核对盘点。
+
+**已验证**
+
+- 知识仓库提交 `c4057f0` 已推送；生产同步 `updated=7、unchanged=27、total=34`，7/7 阅读说明定向重做完成，`pendingNotes=0`。
+- 本机 `npm test` 105/105，lint、`tsc --noEmit`、build、`git diff --check` 通过；缓存回归覆盖命中条目删除后重查、无关结论遇到新增相关 map 后重查，并确认缓存命中保留选择理由。
+- 生产已切换 `release=cfe1adf`，health `ok`，容器重启数 0，镜像为 `sha256:2f48f92d33082ba798112b3a487d7aa9e700383f75c0fd6903c8e9f45b8a625c`。部署前 / 后备份分别为 `/opt/backups/opc/pre-knowledge-cache-cfe1adf-20260919T051729Z/myopc.sqlite` 和 `/opt/backups/opc/post-knowledge-cache-cfe1adf-20260919T051840Z/myopc.sqlite`，完整性均 `ok`、外键错误均为 0。
+- 生产浏览器核对空间页：通用三栏说明已移除；“返回 3 条知识”和“模型或调用方分类（未独立验证）”可见；图谱列表 / 详情仍保留 Mermaid 主图、边界、相关知识、来源与原文；控制台错误 / 警告 0。
+
+**未解决 / 未验证**
+
+- 生产仍有 31 条待整理候选、0 条已处置；本轮不做候选合并 / 新增 / 暂存 / 舍弃，不生成页面反馈。
+- `task-20260919-009` 是一次真实生产接口验证，三条效果均为 `unknown`；`task-20260919-013` 是规程回流整理任务，不算第二次真实业务使用。没有采用率、有效性或效率对照。
+- Easel / Karakeep 的认证后页面、账号内容和自动交接仍未核对；其他机器登录态未核对。
+
 ## 2026-09-19 空间知识可用性与图谱复用
 
 **新增进展**

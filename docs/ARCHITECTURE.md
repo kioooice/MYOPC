@@ -61,6 +61,8 @@ Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知�
 
 上下文调用记录写在通用 `events` 表（`entity_type='agent'`、`kind='agent.context.queried'`），既用于近期重复调用 Gate，也是空间页「知识复用」面板的数据来源；候选处置另写 `agent.candidate.resolved` 事件。Bridge 侧另有 `%LOCALAPPDATA%\OPC\` 下的缓存、日志与待重传队列，项目仓库不产生任何 OPC 文件。项目详情页的「最近进展」读取同仓库的 `project_events`，没有记录时不显示该区块。
 
+近期 context 缓存的事件同时保存候选条目版本、候选池 / 知识同步版本和模型选择理由：命中缓存只重新核对已返回条目，条目删除或内容 / 阅读说明变化就失效；`no_relevant_knowledge` 缓存核对候选池，新增相关 map 或其它候选变化会重新请求模型。空间页把调用结果写成“返回条数”，知识效果只显示“模型或调用方分类（未独立验证）”，不把 `effective` 当作独立成效。
+
 ## 信息承接与当前状态（阶段 2）
 
 `workspace_subjects` 是不依赖 Git 仓库的主题身份，`board` 固定为 `personal` / `personal_project` / `enterprise_project` / `media`；`references_json` 只保存显式的 subject、knowledge、repository、file、url 引用。`workspace_records` 追加历史事实，`workspace_heads` 以 `subject_id + slot` 指向当前有效记录。`history` 不改变 head，`set_current` 与 `clear_current` 都要求调用方提供 `expected_current_id`，服务端在同一事务中校验、追加和移动 / 删除 head；过期 head 与过早的 `observed_at` 返回 409，旧记录保留且不会在 clear 后自动恢复。
