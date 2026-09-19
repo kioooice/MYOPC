@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyWorkspaceWork, contextHasIncompleteData, evidenceLabel, isExplicitUserDecision, subjectContextHasIncompleteData } from "../app/workspace-view-model";
+import { classifyWorkspaceWork, contextHasIncompleteData, evidenceLabel, isExplicitUserDecision, recordDisplayContent, subjectContextHasIncompleteData } from "../app/workspace-view-model";
 
 describe("workspace view state semantics", () => {
   it("only promotes an explicitly marked current record to the decision panel", () => {
@@ -23,6 +23,13 @@ describe("workspace view state semantics", () => {
     expect(evidenceLabel("decision", "verified")).toBe("已记录决定");
   });
 
+  it("shows a marked preview when minimal context omits full content", () => {
+    expect(recordDisplayContent({ content: "完整正文" })).toEqual({ text: "完整正文", isPreview: false, needsMore: false });
+    expect(recordDisplayContent({ content_preview: "预览正文", content_truncated: true })).toEqual({ text: "预览正文", isPreview: true, needsMore: true });
+    expect(recordDisplayContent({ content: "部分正文", content_truncated: true })).toEqual({ text: "部分正文", isPreview: true, needsMore: true });
+    expect(recordDisplayContent({ content_truncated: true })).toEqual({ text: "", isPreview: true, needsMore: true });
+  });
+
   it("marks omitted and truncated context as incomplete", () => {
     expect(contextHasIncompleteData({ truncated: false, omitted_count: 0, subjects: [] })).toBe(false);
     const context = { truncated: true, omitted_count: 1, omitted_ids: ["omitted"], subjects: [{ subject: { id: "shown", current_count: 1 }, current: [{ title: "摘要", content: "..." }], current_truncated: true }] };
@@ -30,5 +37,6 @@ describe("workspace view state semantics", () => {
     expect(subjectContextHasIncompleteData(context, "omitted")).toBe(true);
     expect(subjectContextHasIncompleteData(context, "shown")).toBe(true);
     expect(subjectContextHasIncompleteData({ truncated: true, omitted_count: 1, omitted_ids: ["other"], subjects: [{ subject: { id: "shown", current_count: 1 }, current: [{ title: "完整", content: "..." }] }] }, "shown")).toBe(false);
+    expect(subjectContextHasIncompleteData({ truncated: false, omitted_count: 0, subjects: [{ subject: { id: "preview", current_count: 1 }, current: [{ title: "预览", content_preview: "...", content_truncated: true }] }] }, "preview")).toBe(true);
   });
 });

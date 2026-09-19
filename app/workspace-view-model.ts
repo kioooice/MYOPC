@@ -3,7 +3,15 @@ export type WorkspaceRecordModel = {
   slot?: string | null;
   title?: string | null;
   content?: string | null;
+  content_preview?: string | null;
+  content_truncated?: boolean;
   current?: boolean;
+};
+
+export type WorkspaceRecordDisplay = {
+  text: string;
+  isPreview: boolean;
+  needsMore: boolean;
 };
 
 export type WorkspaceContextModel = {
@@ -29,6 +37,15 @@ const WORK_STATE_SLOTS = new Set(["work_status", "work_state", "workflow_status"
 
 function normalizedValue(value: string | null | undefined) {
   return (value || "").trim().toLowerCase().replace(/[：:]/g, "");
+}
+
+/** Prefer full content, but make the API's minimal preview explicit instead of rendering a blank card. */
+export function recordDisplayContent(record: WorkspaceRecordModel): WorkspaceRecordDisplay {
+  const content = (record.content || "").trim();
+  const preview = (record.content_preview || "").trim();
+  if (content) return { text: content, isPreview: Boolean(record.content_truncated), needsMore: Boolean(record.content_truncated) };
+  if (preview) return { text: preview, isPreview: true, needsMore: true };
+  return { text: "", isPreview: Boolean(record.content_truncated), needsMore: true };
 }
 
 /** Only an explicit current marker can place a record in the decision panel. */
@@ -69,7 +86,7 @@ export function evidenceLabel(type: string | undefined, status: string | undefin
 export function contextHasIncompleteData(context: WorkspaceContextModel | null | undefined) {
   if (!context) return true;
   if (context.truncated || context.budget_exceeded || (context.omitted_count || 0) > 0 || (context.omitted_ids?.length || 0) > 0 || (context.missing_subject_ids?.length || 0) > 0) return true;
-  return (context.subjects || []).some((item) => Boolean(item.current_truncated || item.history_truncated || item.sources_truncated || (item.history_omitted_count || 0) > 0 || (item.sources_omitted_count || 0) > 0));
+  return (context.subjects || []).some((item) => Boolean(item.current_truncated || item.current?.some((record) => record.content_truncated) || item.history_truncated || item.sources_truncated || (item.history_omitted_count || 0) > 0 || (item.sources_omitted_count || 0) > 0));
 }
 
 export function subjectContextHasIncompleteData(context: WorkspaceContextModel | null | undefined, subjectId: string) {
@@ -77,5 +94,5 @@ export function subjectContextHasIncompleteData(context: WorkspaceContextModel |
   if (context.omitted_ids?.includes(subjectId) || context.missing_subject_ids?.includes(subjectId)) return true;
   const item = (context.subjects || []).find((candidate) => candidate.subject?.id === subjectId);
   if (!item) return false;
-  return Boolean(item.current_truncated || item.history_truncated || item.sources_truncated || (item.history_omitted_count || 0) > 0 || (item.sources_omitted_count || 0) > 0);
+  return Boolean(item.current_truncated || item.current?.some((record) => record.content_truncated) || item.history_truncated || item.sources_truncated || (item.history_omitted_count || 0) > 0 || (item.sources_omitted_count || 0) > 0);
 }
