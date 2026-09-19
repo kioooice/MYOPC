@@ -510,3 +510,9 @@
 - 源任务复验指出 MYOPC 的 `stage / next_step` 仍出现在首页“当前工作”，以及截断 AI 决定缺少补读入口；本次只按显式 `subject_id + slot` 从首页“当前理解”和“当前工作”同时排除内部状态，保留其他项目真实 `work_status`，并为 `content_preview / content_truncated` AI 决定增加部分摘要提示和“查看主题”入口。
 - 提交 `d44bd00` 已推送并部署，健康接口返回 `release=d44bd00`，容器 `running / RestartCount=0`；生产 workspace 前后仍为 2 个主题、7 条记录、4 个 heads，未写入生产测试数据。
 - 本机完整测试 102/102、lint、tsc、build 通过；合成浏览器验证内部状态从两处首页区域消失、其他项目状态保留、AI 摘要入口可见、详情/历史保留、390px 无溢出；生产隧道浏览器验证同样边界，控制台错误为空。备份为 `/opt/backups/opc/pre-stage3-ux-d44bd00-20260919T005100Z/myopc.sqlite` 与 `/opt/backups/opc/post-stage3-ux-d44bd00-20260919T005100Z/myopc.sqlite`，完整性均 ok、外键错误 0、哈希一致。
+
+## 2026-09-19 阶段 3 第一轮主任务验收通过
+
+- 主任务独立确认生产 `release=d44bd00`、补修模型测试 7/7；生产首页当前理解 / 当前工作均无 MYOPC `stage / next_step`，两个决定栏与更正区状态符合本轮范围。
+- 干净浏览器会话确认截断 AI `content_preview` 的局部提示与全局不完整提示共存，点击“查看主题”可进入“OPC 的一人公司方向与边界”且历史存在；390px 无横向溢出，控制台错误 0。AI 决定真实登记为空，继续如实显示为空。
+- 当前验收通过，下一步仅等待用户体验反馈；不进入下一阶段。
