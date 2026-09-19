@@ -20,6 +20,7 @@
 
 - 本机 `npm test`：103/103；`npm run lint`、`npx tsc --noEmit`、`npm run build` 与 `git diff --check` 通过。
 - 生产真实 context 调用返回 `kill-doc-content-pipeline` 图谱及 `local-first-provenance`、`safe-deploy` 两条笔记，并返回各自理由与原文；随后结果 `task-20260919-009` 以 provided summary 入库，三条 `effect=unknown`，没有伪造效率或业务成果。按项目规程回流本轮完整结果另生成 `task-20260919-013` 和 2 条待处置候选经验；其中模型对知识支撑作用的分类不是业务成效证据。
+- 收尾后的生产复用概览为 `calls=20、usedCalls=17、results=76、pendingCandidates=31、resolvedCandidates=0`；本轮新增的 2 条候选未处置，不把候选数量当成复用效果。
 - 生产运行版本为 `41f3bf5`，health 为 `ok`，容器重启数 0；部署前 / 后 SQLite backup 分别为 `/opt/backups/opc/pre-knowledge-reuse-41f3bf5-20260919T123748/myopc.sqlite` 与 `/opt/backups/opc/post-knowledge-reuse-41f3bf5-20260919T124947/myopc.sqlite`，完整性均 `ok`、外键错误均为 0。SSH 隧道下浏览器已核对空间提示、图谱列表、图谱详情和控制台，错误 / 警告均为 0。
 
 **未解决 / 未验证**

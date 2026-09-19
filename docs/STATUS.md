@@ -4,6 +4,7 @@
 
 - 知识仓库已推送 `4309dfc`：16 条变更笔记已整理，14 个项目与 3 个工具完成有界核对，现有 `kill-doc-content-pipeline` 图谱保留；同步统计 `0/16/18/0/34`（added / updated / unchanged / removed / total），16/16 阅读说明重做完成，`pendingNotes=0`。
 - 应用提交 `41f3bf5` 已推送并部署。生产 `release=41f3bf5`、health `ok`、容器重启数 0；真实 `POST /api/v1/agent/context` 命中 1 张图谱 + 2 条笔记并返回理由与原文，`task-20260919-009` 已回流且三条效果均为 `unknown`。规程回流另生成 `task-20260919-013` 和 2 条待处置候选经验，未把模型分类当成业务效果。
+- 收尾后的生产复用概览为 `calls=20、usedCalls=17、results=76、pendingCandidates=31、resolvedCandidates=0`；候选仍未进入合并 / 暂存 / 舍弃处置。
 - 空间和图谱入口已通过生产 SSH 隧道浏览器复验：使用提示、图谱列表、Mermaid 主图、关键分界、边界、相关知识、来源和原文入口均可读；控制台错误 / 警告 0。知识复用继续保留最多 3 条、缓存、阈值与正文截断规则。
 - 部署前 / 后备份：`/opt/backups/opc/pre-knowledge-reuse-41f3bf5-20260919T123748/myopc.sqlite`、`/opt/backups/opc/post-knowledge-reuse-41f3bf5-20260919T124947/myopc.sqlite`；两次完整性均 `ok`，外键错误均为 0。
 
