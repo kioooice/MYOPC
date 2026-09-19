@@ -477,11 +477,6 @@ function KnowledgeListView({ kind, items, onOpen, reuse, onResolveCandidate }: {
         {allGroups.map((group) => <button key={group.label} className={categoryFilter === group.label ? "category-chip active" : "category-chip"} onClick={() => setCategoryFilter(group.label)}>{group.label} <small>{group.items.length}</small></button>)}
       </div>}
     </div>
-    {(kind === "note" || kind === "map") && <div className="knowledge-use-guide">
-      <div><strong>解决什么</strong><span>{kind === "map" ? "把结构、流程和关键分界放在一起，帮助定位可复用的层。" : "把项目记录中的方法、经验与判断整理成下次可调用的参考。"}</span></div>
-      <div><strong>什么时候值得打开</strong><span>{kind === "map" ? "需要判断接入位置、依赖关系或迁移边界时。" : "需要选择方案、排查风险或复用过去的处理方式时。"}</span></div>
-      <div><strong>边界</strong><span>命中不等于采用，采用也不等于有效；请打开原文、来源和相关条目核对。</span></div>
-    </div>}
     {kind === "note" && reuse && (reuse.counts.calls > 0 || reuse.counts.results > 0) && <details className="reuse-panel">
       <summary>
         <strong>知识复用</strong>
@@ -493,7 +488,7 @@ function KnowledgeListView({ kind, items, onOpen, reuse, onResolveCandidate }: {
           {reuse.recentCalls.length === 0 ? <p className="muted-text">还没有调用记录。</p> : <ul className="reuse-list">{reuse.recentCalls.slice(0, 5).map((call) => <li key={call.id}>
             <span className="reuse-repo">{call.repository}</span>
             <span className="reuse-task">{call.task}</span>
-            <span className="reuse-meta">{call.usedCount > 0 ? `使用 ${call.usedCount} 条历史知识` : "未命中"}{call.outcome ? ` · 结果：${call.outcome}` : ""}{call.usedCount === 0 && call.reason ? ` · ${call.reason}` : ""} · {new Date(call.createdAt).toLocaleString("zh-CN")}</span>
+            <span className="reuse-meta">{call.usedCount > 0 ? `返回 ${call.usedCount} 条知识` : "未返回知识"}{call.outcome ? ` · 结果：${call.outcome}` : ""}{call.usedCount === 0 && call.reason ? ` · ${call.reason}` : ""} · {new Date(call.createdAt).toLocaleString("zh-CN")}</span>
           </li>)}</ul>}
         </div>
         <div className="reuse-block">
@@ -512,14 +507,14 @@ function KnowledgeListView({ kind, items, onOpen, reuse, onResolveCandidate }: {
           </details>}
         </div>
         <div className="reuse-block">
-          <h4>知识使用情况</h4>
+          <h4>知识使用情况（结果分类）</h4>
           {reuse.usage.length === 0 ? <p className="muted-text">还没有被复用的知识。</p> : <ul className="reuse-list">{reuse.usage.slice(0, 5).map((item) => <li key={item.id}>
             <span className="reuse-task">{item.title}</span>
-            <span className="reuse-meta">被使用 {item.usedCount} 次 · {item.effective} 有效 / {item.partial} 部分有效 / {item.ineffective} 无效{item.unknown > 0 ? ` / ${item.unknown} 未判定` : ""}</span>
+            <span className="reuse-meta">被记录使用 {item.usedCount} 次 · 模型或调用方分类（未独立验证）：{item.effective} 条“有效” / {item.partial} 条“部分有效” / {item.ineffective} 条“无效”{item.unknown > 0 ? ` / ${item.unknown} 条未判定` : ""}</span>
           </li>)}</ul>}
         </div>
       </div>
-      <p className="reuse-hint">结果与阶段事件先保存在 OPC；候选经验在这里处置后才进入知识仓库，OPC 不自动改仓库。</p>
+      <p className="reuse-hint">结果与阶段事件先保存在 OPC；候选经验在这里处置后才进入知识仓库。效果分类来自模型或调用方，不是独立验证，OPC 不自动改仓库。</p>
     </details>}
     {items.length === 0
       ? <div className="quiet-empty"><BookOpen size={22} /><p>知识仓库里还没有{meta.title}条目</p></div>

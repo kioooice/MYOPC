@@ -151,7 +151,47 @@ describe("开发知识复用 · context", () => {
     expect(first.cached).toBe(false);
     expect(second.cached).toBe(true);
     expect(second.items.map((item) => item.id)).toEqual(["note-a"]);
+    expect(second.items[0].reason).toBe("相关");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("命中条目删除后不复用旧缓存", async () => {
+    const path = entryFile("notes/a.md", noteEntry("note-a", "输入稳定性", "正文"));
+    entryFile("notes/unrelated.md", noteEntry("note-unrelated", "无关笔记", "不相关。"));
+    syncKnowledge();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(modelResponse({ selected: [{ id: "note-a", reason: "相关" }] }))
+      .mockResolvedValueOnce(modelResponse({ selected: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = await selectReusableKnowledge({ repository: "kioooice/agentVision", task: "改善目标区域识别稳定性" });
+    expect(first.used).toBe(true);
+    rmSync(path);
+    syncKnowledge();
+
+    const second = await selectReusableKnowledge({ repository: "kioooice/agentVision", task: "改善目标区域识别稳定性" });
+    expect(second.cached).toBe(false);
+    expect(second.used).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("无关结果遇到新增相关图谱后重新检索", async () => {
+    entryFile("notes/unrelated.md", noteEntry("note-unrelated", "无关笔记", "不相关。"));
+    syncKnowledge();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(modelResponse({ selected: [] }))
+      .mockResolvedValueOnce(modelResponse({ selected: [{ id: "map-pipeline", reason: "需要按结构定位接入层", confidence: 95 }] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = await selectReusableKnowledge({ repository: "kioooice/MYOPC", task: "判断网页内容处理接入哪一层" });
+    expect(first.reason).toBe("no_relevant_knowledge");
+    entryFile("maps/pipeline.md", mapEntry("map-pipeline", "内容处理管线", "## 结构图\n\nAdapter 到 Exporter 的分层。"));
+    syncKnowledge();
+
+    const second = await selectReusableKnowledge({ repository: "kioooice/MYOPC", task: "判断网页内容处理接入哪一层" });
+    expect(second.cached).toBe(false);
+    expect(second.items.map((item) => item.id)).toEqual(["map-pipeline"]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("推理模型第一次把预算用在推理上导致内容被截断时，会放大预算重试", async () => {

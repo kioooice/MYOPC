@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { getDb } from "../db";
 import { callChatModel, getModelConfig, type ModelConfig } from "./model";
 import { KnowledgeError } from "./repo";
-import { getKnowledgeEntry, listKnowledgeEntries, listReadingNotes } from "./store";
+import { getKnowledgeEntry, getKnowledgeSyncState, getReadingNote, listKnowledgeEntries, listReadingNotes } from "./store";
 import {
   listProjectEvents,
   normalizeProjectEvents,
@@ -139,17 +139,81 @@ function normalizedTask(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function knowledgeDigest(parts: string[]) {
+  return createHash("sha256").update(parts.join("\n")).digest("hex");
+}
+
+/**
+ * 缓存只依赖候选条目的内容版本：命中缓存只检查已返回条目，
+ * no_relevant 缓存检查候选池，以便新增 map 时不会沿用旧的无关结论。
+ */
+function knowledgeEntryVersion(id: string) {
+  const entry = getKnowledgeEntry(id);
+  if (!entry || !entry.visible || (entry.kind !== "note" && entry.kind !== "map")) return null;
+  const note = getReadingNote(id);
+  return knowledgeDigest([
+    entry.id,
+    entry.contentHash,
+    note?.promptVersion || "",
+    note?.sourceHash || "",
+    note?.status || "missing",
+    note?.content ? JSON.stringify(note.content) : "",
+  ]);
+}
+
+function knowledgePoolVersion() {
+  const entries = listKnowledgeEntries({}).filter((entry) => entry.kind === "note" || entry.kind === "map");
+  const notes = listReadingNotes(entries.map((entry) => entry.id));
+  const sync = getKnowledgeSyncState();
+  const parts = entries.map((entry) => {
+    const note = notes.get(entry.id);
+    return [
+      entry.id,
+      entry.kind,
+      entry.contentHash,
+      note?.promptVersion || "",
+      note?.sourceHash || "",
+      note?.status || "missing",
+      note?.content ? JSON.stringify(note.content) : "",
+    ].join("|");
+  }).sort();
+  return knowledgeDigest([`sync:${sync.commit || "none"}`, ...parts]);
+}
+
+function knowledgeItemVersions(ids: string[]) {
+  return Object.fromEntries(ids.map((id) => [id, knowledgeEntryVersion(id)]).filter((item): item is [string, string] => Boolean(item[1])));
+}
+
 /** 近期相同仓库 + 相同任务的调用结果，用来避免重复请求模型。 */
 function recentContextResult(repository: string, task: string): ReuseContextResult | null {
   const cutoff = new Date(Date.now() - DUPLICATE_WINDOW_MS).toISOString();
   const rows = getDb().prepare("SELECT entity_id, payload_json, created_at FROM events WHERE entity_type='agent' AND kind='agent.context.queried' AND created_at > ? ORDER BY sequence DESC LIMIT 50")
     .all(cutoff) as Array<{ entity_id: string; payload_json: string; created_at: string }>;
+  let currentPoolVersion: string | null = null;
   for (const row of rows) {
-    const payload = parseJson<{ repository?: string; task?: string; used?: boolean; reason?: string | null; itemIds?: string[]; model?: string | null }>(row.payload_json, {});
+    const payload = parseJson<{
+      repository?: string;
+      task?: string;
+      used?: boolean;
+      reason?: string | null;
+      itemIds?: string[];
+      itemVersions?: Record<string, string>;
+      itemReasons?: Record<string, string>;
+      poolVersion?: string;
+      model?: string | null;
+    }>(row.payload_json, {});
     if (payload.repository !== repository || normalizedTask(payload.task || "") !== normalizedTask(task)) continue;
     // 只复用确定的结果（命中知识或确认无关）；模型/网络失败允许下次重试。
     if (payload.used !== true && payload.reason !== "no_relevant_knowledge") continue;
-    const items = (payload.itemIds || []).map((id) => contextItem(id, "")).filter((item): item is ReuseContextItem => Boolean(item));
+    if (payload.used === true) {
+      const itemVersions = payload.itemVersions;
+      if (!itemVersions || (payload.itemIds || []).some((id) => itemVersions[id] !== knowledgeEntryVersion(id))) continue;
+    } else {
+      currentPoolVersion ??= knowledgePoolVersion();
+      if (!payload.poolVersion || payload.poolVersion !== currentPoolVersion) continue;
+    }
+    const itemReasons = payload.itemReasons || {};
+    const items = (payload.itemIds || []).map((id) => contextItem(id, itemReasons[id] || "")).filter((item): item is ReuseContextItem => Boolean(item));
     return { used: Boolean(payload.used), reason: payload.reason ?? null, items, model: payload.model ?? null, cached: true, queryId: row.entity_id };
   }
   return null;
@@ -255,13 +319,13 @@ export async function selectReusableKnowledge(input: { repository?: unknown; tas
 
   const pool = knowledgePool();
   if (pool.length === 0) {
-    recordAgentEvent(queryId, "agent.context.queried", { repository, task, used: false, reason: "no_relevant_knowledge", itemIds: [], model: null });
+    recordAgentEvent(queryId, "agent.context.queried", { repository, task, used: false, reason: "no_relevant_knowledge", itemIds: [], itemVersions: {}, poolVersion: knowledgePoolVersion(), model: null });
     return { used: false, reason: "no_relevant_knowledge", items: [], model: null, cached: false, queryId };
   }
 
   const config = getModelConfig();
   if (!config) {
-    recordAgentEvent(queryId, "agent.context.queried", { repository, task, used: false, reason: "model_not_configured", itemIds: [], model: null });
+    recordAgentEvent(queryId, "agent.context.queried", { repository, task, used: false, reason: "model_not_configured", itemIds: [], itemVersions: {}, poolVersion: knowledgePoolVersion(), model: null });
     return { used: false, reason: "model_not_configured", items: [], model: null, cached: false, queryId };
   }
 
@@ -308,7 +372,19 @@ export async function selectReusableKnowledge(input: { repository?: unknown; tas
     queryId,
     message,
   };
-  recordAgentEvent(queryId, "agent.context.queried", { repository, task, used: result.used, reason: result.reason, message: message ?? null, itemIds: items.map((item) => item.id), model });
+  const itemIds = items.map((item) => item.id);
+  recordAgentEvent(queryId, "agent.context.queried", {
+    repository,
+    task,
+    used: result.used,
+    reason: result.reason,
+    message: message ?? null,
+    itemIds,
+    itemVersions: knowledgeItemVersions(itemIds),
+    itemReasons: Object.fromEntries(items.map((item) => [item.id, item.reason])),
+    poolVersion: knowledgePoolVersion(),
+    model,
+  });
   return result;
 }
 
