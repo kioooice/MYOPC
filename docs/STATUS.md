@@ -1,6 +1,15 @@
 # 当前状态
 
-## 2026-09-19 阶段 3 第一轮技术验收通过（当前）
+## 2026-09-19 阶段 3 第一轮用户体验调整（当前，等待源任务验收）
+
+- 根据用户体验反馈完成局部调整：移除首页 / 详情页更正说明、复制提示、系统定位和逐条“定位更正”按钮；保留数据层更正、当前头、历史与来源能力，用户改为在 Codex 入口自然反馈。
+- 首页顶部改为“需要你决定”和“AI 已替你做的决定”两块。AI 面板只接受当前、`kind=decision`、`slot=ai_decision`、`origin=agent`、`assertion=reported` 且带来源定位的记录；用户决定、普通执行观察和无显式标记的 agent 决定不提升。`slot=collaboration` 的旧协作机制记录与 MYOPC 的 `stage / next_step` 只在主题详情 / 历史保留，未用中文关键词过滤，也未删除生产记录。
+- 应用提交 `144058a`、边界修复提交 `874c434` 均已推送；生产运行 `874c434`，健康接口返回 `status=ok`，容器 `running / RestartCount=0`。本轮未写入或修改生产 workspace 记录，生产仍为 2 个主题、7 条记录、4 个 heads。
+- 本机验证：模型回归 7/7，完整 `npm test` 102/102，`npm run lint`、`npx tsc --noEmit`、`npm run build` 通过；隔离浏览器合成数据验证用户 / AI 决定归类、内部阶段移出当前理解、详情与历史保留、390px 无横向溢出；生产隧道浏览器验证首页、主题详情、390px 和控制台错误为空。
+- 部署前后备份分别为 `/opt/backups/opc/pre-stage3-ux-874c434-20260919T004300Z/myopc.sqlite` 与 `/opt/backups/opc/post-stage3-ux-874c434-20260919T004300Z/myopc.sqlite`，两次 SQLite backup/verify 均 `integrity=ok`、外键错误 0，哈希一致。
+- 遗留与边界：等待源讨论任务验收本轮体验调整；不进入页面第二轮重组、反馈生成、阶段 4 或服务器以外的经营部署。
+
+## 2026-09-19 阶段 3 第一轮技术验收通过（历史基线）
 
 - 原讨论任务已独立复验阶段 3 第一轮技术验收通过；当前等待用户体验反馈，第二轮接续尚未启动。本轮只补 `content_preview / content_truncated` 的明确展示、已知显式待决保留、当前工作区部分加载提示和首页前 8 条当前理解的继续查看提示。
 - 应用提交 `0019f1a` 已推送并部署；生产 `/opt/apps/opc` 与远端 `main` 均为 `0019f1a`，健康接口返回 `status=ok、release=0019f1a`，容器 `running / RestartCount=0`。
