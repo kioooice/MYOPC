@@ -493,14 +493,20 @@
 
 - 按本轮反馈移除首页和主题详情中的更正说明、复制提示、系统定位及逐条定位按钮；只保留数据层更正、当前头、历史和来源能力，用户自然回到 Codex 入口反馈，不在页面引导模板或观察时间 / 槽位填写。
 - 首页顶部改为“需要你决定”和“AI 已替你做的决定”。AI 面板只接受当前、`kind=decision`、`slot=ai_decision`、`origin=agent`、`assertion=reported` 且带 `source_locator` 的记录；用户决定、普通执行观察和无显式标记的 agent 决定不进入该面板。无记录和摘要不完整时分别保持诚实空状态 / 不确定提示。
-- 首页当前理解按明确槽位排除 `slot=collaboration` 的内部协作机制，以及 `myopc-stage2` 的 `stage / next_step` 交付阶段记录；不做中文关键词过滤，不删除生产记录，项目详情和历史继续显示这些记录。当前工作列对状态槽位只显示标题，避免重复内部正文。
+- 首页当前理解和当前工作都按明确槽位排除 `slot=collaboration` 的内部协作机制，以及 `myopc-stage2` 的 `stage / next_step` 交付阶段记录；不做中文关键词过滤，不删除生产记录，项目详情和历史继续显示这些记录。其他项目真实 `work_status` 仍保留；截断 AI 决定显示部分摘要提示并提供主题入口。
 
 **已验证**
 
 - 本地模型回归 7/7，完整 `npm test` 102/102，`npm run lint`、`npx tsc --noEmit`、`npm run build` 通过。隔离合成数据浏览器验证用户 / AI 决定归类、当前理解过滤、个人项目详情 / 历史保留和 390px 无横向溢出；生产隧道浏览器验证首页、详情、窄屏和控制台错误为空。
-- 应用提交 `144058a` 与边界修复提交 `874c434` 已推送，服务器健康接口返回 `release=874c434`，容器运行且重启数为 0。部署前后 SQLite backup/verify 备份分别为 `/opt/backups/opc/pre-stage3-ux-874c434-20260919T004300Z/myopc.sqlite` 与 `/opt/backups/opc/post-stage3-ux-874c434-20260919T004300Z/myopc.sqlite`，完整性均 ok、外键错误 0、哈希一致。
+- 应用提交 `144058a`、`874c434` 与 `d44bd00` 已推送，服务器健康接口返回 `release=d44bd00`，容器运行且重启数为 0。部署前后 SQLite backup/verify 备份分别为 `/opt/backups/opc/pre-stage3-ux-d44bd00-20260919T005100Z/myopc.sqlite` 与 `/opt/backups/opc/post-stage3-ux-d44bd00-20260919T005100Z/myopc.sqlite`，完整性均 ok、外键错误 0、哈希一致。
 - 生产 workspace 前后均为 2 个主题、7 条记录、4 个 heads；本轮未新增或修改真实记录，也未把合成数据写入生产。
 
 **未解决 / 未进入**
 
 - 等待源讨论任务验收本轮体验调整；阶段 3 第二轮页面重组、阶段 4 反馈生成、阶段 5 真实使用验收均未开始。
+
+## 2026-09-19 阶段 3 第一轮验收补修收拢
+
+- 源任务复验指出 MYOPC 的 `stage / next_step` 仍出现在首页“当前工作”，以及截断 AI 决定缺少补读入口；本次只按显式 `subject_id + slot` 从首页“当前理解”和“当前工作”同时排除内部状态，保留其他项目真实 `work_status`，并为 `content_preview / content_truncated` AI 决定增加部分摘要提示和“查看主题”入口。
+- 提交 `d44bd00` 已推送并部署，健康接口返回 `release=d44bd00`，容器 `running / RestartCount=0`；生产 workspace 前后仍为 2 个主题、7 条记录、4 个 heads，未写入生产测试数据。
+- 本机完整测试 102/102、lint、tsc、build 通过；合成浏览器验证内部状态从两处首页区域消失、其他项目状态保留、AI 摘要入口可见、详情/历史保留、390px 无溢出；生产隧道浏览器验证同样边界，控制台错误为空。备份为 `/opt/backups/opc/pre-stage3-ux-d44bd00-20260919T005100Z/myopc.sqlite` 与 `/opt/backups/opc/post-stage3-ux-d44bd00-20260919T005100Z/myopc.sqlite`，完整性均 ok、外键错误 0、哈希一致。
