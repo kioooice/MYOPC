@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyWorkspaceWork, contextHasIncompleteData, evidenceLabel, isExplicitUserDecision, recordDisplayContent, subjectContextHasIncompleteData } from "../app/workspace-view-model";
+import { classifyWorkspaceWork, contextHasIncompleteData, evidenceLabel, isExplicitAgentDecision, isExplicitUserDecision, isOverviewUnderstandingRecord, recordDisplayContent, subjectContextHasIncompleteData, workspaceRecordSummary } from "../app/workspace-view-model";
 
 describe("workspace view state semantics", () => {
   it("only promotes an explicitly marked current record to the decision panel", () => {
@@ -7,6 +7,23 @@ describe("workspace view state semantics", () => {
     expect(isExplicitUserDecision({ kind: "question", slot: "needs_user_decision", current: true })).toBe(true);
     expect(isExplicitUserDecision({ kind: "correction", slot: "needs_user_decision", current: true })).toBe(false);
     expect(isExplicitUserDecision({ kind: "question", slot: "needs_user_decision", current: false })).toBe(false);
+  });
+
+  it("only promotes a sourced, reported agent decision to the AI decision panel", () => {
+    expect(isExplicitAgentDecision({ kind: "decision", slot: "ai_decision", origin: "agent", assertion: "reported", source_locator: "opc:task:test", current: true })).toBe(true);
+    expect(isExplicitAgentDecision({ kind: "decision", slot: "ai_decision", origin: "user", assertion: "reported", source_locator: "opc:task:test", current: true })).toBe(false);
+    expect(isExplicitAgentDecision({ kind: "decision", slot: "ai_decision", origin: "agent", assertion: "inferred", source_locator: "opc:task:test", current: true })).toBe(false);
+    expect(isExplicitAgentDecision({ kind: "decision", slot: "ai_decision", origin: "agent", assertion: "reported", current: true })).toBe(false);
+    expect(isExplicitAgentDecision({ kind: "observation", slot: "stage", origin: "agent", assertion: "reported", source_locator: "opc:task:test", current: true })).toBe(false);
+  });
+
+  it("keeps MYOPC delivery status in project detail and summarizes it by title in work columns", () => {
+    expect(isOverviewUnderstandingRecord({ subject_id: "myopc-stage2", kind: "observation", slot: "stage", current: true })).toBe(false);
+    expect(isOverviewUnderstandingRecord({ subject_id: "myopc-stage2", kind: "observation", slot: "next_step", current: true })).toBe(false);
+    expect(isOverviewUnderstandingRecord({ subject_id: "another-project", kind: "observation", slot: "stage", current: true })).toBe(true);
+    expect(isOverviewUnderstandingRecord({ subject_id: "myopc-stage2", kind: "question", slot: "open_question", current: true })).toBe(false);
+    expect(workspaceRecordSummary({ subject_id: "myopc-stage2", kind: "observation", slot: "stage", title: "用户可读阶段", content: "内部验收报告", current: true })).toBe("用户可读阶段");
+    expect(workspaceRecordSummary({ subject_id: "myopc-stage2", kind: "observation", slot: "work_status", title: "进行中", content: "业务状态说明", current: true })).toBe("业务状态说明");
   });
 
   it("does not infer business work state from event evidence", () => {

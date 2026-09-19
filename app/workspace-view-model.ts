@@ -1,10 +1,17 @@
 export type WorkspaceRecordModel = {
+  subject_id?: string | null;
   kind?: string | null;
   slot?: string | null;
   title?: string | null;
   content?: string | null;
   content_preview?: string | null;
   content_truncated?: boolean;
+  rationale?: string | null;
+  references?: Array<{ kind?: string; id?: string; locator?: string; label?: string }>;
+  origin?: string | null;
+  assertion?: string | null;
+  source_locator?: string | null;
+  observed_at?: string | null;
   current?: boolean;
 };
 
@@ -34,6 +41,8 @@ export type WorkspaceContextModel = {
 export type WorkspaceWorkState = "in_progress" | "completed" | "blocked" | "unknown";
 
 const WORK_STATE_SLOTS = new Set(["work_status", "work_state", "workflow_status"]);
+const INTERNAL_PROJECT_SUBJECT_ID = "myopc-stage2";
+const INTERNAL_PROJECT_STATUS_SLOTS = new Set(["stage", "next_step"]);
 
 function normalizedValue(value: string | null | undefined) {
   return (value || "").trim().toLowerCase().replace(/[：:]/g, "");
@@ -51,6 +60,22 @@ export function recordDisplayContent(record: WorkspaceRecordModel): WorkspaceRec
 /** Only an explicit current marker can place a record in the decision panel. */
 export function isExplicitUserDecision(record: WorkspaceRecordModel) {
   return record.current !== false && record.slot === "needs_user_decision" && record.kind !== "correction";
+}
+
+/** Only an explicitly named, sourced agent decision is eligible for the AI decision panel. */
+export function isExplicitAgentDecision(record: WorkspaceRecordModel) {
+  return record.current !== false && record.kind === "decision" && record.slot === "ai_decision" && record.origin === "agent" && record.assertion === "reported" && Boolean(record.source_locator);
+}
+
+/** Keep the MYOPC delivery phase and next-step heads in the project detail, not personal understanding. */
+export function isOverviewUnderstandingRecord(record: WorkspaceRecordModel) {
+  return record.kind !== "question" && !(record.subject_id === INTERNAL_PROJECT_SUBJECT_ID && INTERNAL_PROJECT_STATUS_SLOTS.has(record.slot || ""));
+}
+
+/** Status slots use their short, user-readable title in the work column instead of internal report prose. */
+export function workspaceRecordSummary(record: WorkspaceRecordModel) {
+  if (INTERNAL_PROJECT_STATUS_SLOTS.has(record.slot || "") && record.title) return record.title;
+  return recordDisplayContent(record).text;
 }
 
 /** Event evidence and business work state are separate concepts. */

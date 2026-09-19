@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, Briefcase, Building2, CheckCircle2, ChevronRight, CircleAlert, Clock3, Compass, FileText, History, Info, Link2, Megaphone, RefreshCw, ShieldCheck, UserRound } from "lucide-react";
-import { classifyWorkspaceWork, contextHasIncompleteData, evidenceLabel, isExplicitUserDecision, recordDisplayContent, subjectContextHasIncompleteData, workStateLabel, type WorkspaceWorkState } from "./workspace-view-model";
+import { ArrowUpRight, Briefcase, Building2, ChevronRight, CircleAlert, Clock3, Compass, FileText, History, Info, Link2, Megaphone, RefreshCw, UserRound } from "lucide-react";
+import { classifyWorkspaceWork, contextHasIncompleteData, evidenceLabel, isExplicitAgentDecision, isExplicitUserDecision, isOverviewUnderstandingRecord, recordDisplayContent, subjectContextHasIncompleteData, workspaceRecordSummary, workStateLabel, type WorkspaceWorkState } from "./workspace-view-model";
 
 export type WorkspaceBoard = "overview" | "personal" | "personal_project" | "enterprise_project" | "media";
 type BoardId = Exclude<WorkspaceBoard, "overview">;
@@ -207,8 +207,6 @@ export default function WorkspaceView({ activeBoard, onBoardChange }: WorkspaceV
   const [refreshing, setRefreshing] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [fallbackCorrectionText, setFallbackCorrectionText] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [loadedAt, setLoadedAt] = useState<string | null>(null);
 
@@ -241,12 +239,6 @@ export default function WorkspaceView({ activeBoard, onBoardChange }: WorkspaceV
     const timer = window.setTimeout(() => { void load(); }, 0);
     return () => window.clearTimeout(timer);
   }, [load]);
-
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(""), 4500);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
 
   const openSubject = useCallback(async (subjectId: string) => {
     const subject = subjects.find((candidate) => candidate.id === subjectId);
@@ -287,10 +279,11 @@ export default function WorkspaceView({ activeBoard, onBoardChange }: WorkspaceV
   const boardSubjects = useMemo(() => activeBoard === "overview" ? [] : subjects.filter((subject) => subject.board === activeBoard), [activeBoard, subjects]);
   const selectedSubject = selectedSubjectId ? subjects.find((subject) => subject.id === selectedSubjectId && (activeBoard === "overview" || subject.board === activeBoard)) || null : null;
   const currentRecords = useMemo(() => Object.values(contexts).flatMap((context) => context?.subjects.flatMap((subject) => subject.current) || []), [contexts]);
-  const understandingRecordsAll = currentRecords.filter((record) => record.kind !== "question");
+  const understandingRecordsAll = currentRecords.filter(isOverviewUnderstandingRecord);
   const understandingRecords = understandingRecordsAll.slice(0, 8);
   const understandingRecordsTruncated = understandingRecordsAll.length > understandingRecords.length;
   const explicitQuestions = currentRecords.filter((record) => isExplicitUserDecision(record));
+  const aiDecisions = currentRecords.filter((record) => isExplicitAgentDecision(record));
   const workRecords = currentRecords.flatMap((record) => {
     const state = classifyWorkspaceWork(record);
     return state ? [{ record, state }] : [];
@@ -311,22 +304,6 @@ export default function WorkspaceView({ activeBoard, onBoardChange }: WorkspaceV
     if (!related) return;
     onBoardChange(related.board);
     void openSubject(subjectId);
-  }
-
-  async function copyCorrectionPrompt(subjectId: string, slot: string | null | undefined, recordId?: string, currentText?: string) {
-    const prompt = `我发现“${excerpt(currentText, 100) || "这条当前记录"}”不准确，正确应为：“请填写正确内容”。
-来源：请填写来源；观察时间：请填写时间。
-（系统定位：主题 ${subjectId}${recordId ? `，记录 ${recordId}` : ""}${slot ? `，当前项 ${slot}` : ""}）`;
-    try {
-      const clipboard = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
-      if (!window.isSecureContext || !clipboard?.writeText) throw new Error("clipboard_unavailable");
-      await clipboard.writeText(prompt);
-      setFallbackCorrectionText("");
-      setNotice("更正提示已复制；请在 Codex 入口提交并带上来源");
-    } catch {
-      setFallbackCorrectionText(prompt);
-      setNotice("当前环境不能自动复制；请选中下方文字后复制，再提交更正");
-    }
   }
 
   if (loading && subjects.length === 0) return <div className="workspace-loading"><RefreshCw size={17} className="spin" />正在读取 OPC 当前状态…</div>;
@@ -350,19 +327,17 @@ export default function WorkspaceView({ activeBoard, onBoardChange }: WorkspaceV
     </nav>
 
     {error && <div className="workspace-inline-error"><CircleAlert size={16} /><span>{error}</span><button onClick={() => void load()}>重新读取</button></div>}
-    {notice && <div className="workspace-inline-notice"><CheckCircle2 size={15} /><span>{notice}</span></div>}
-    {fallbackCorrectionText && <div className="workspace-copy-fallback"><label htmlFor="workspace-correction-fallback">请选中并复制这段更正提示</label><textarea id="workspace-correction-fallback" readOnly value={fallbackCorrectionText} onFocus={(event) => event.currentTarget.select()} /></div>}
-
     {activeBoard === "overview"
-      ? <OverviewPanel recentChanges={recentChanges} workRecords={workRecords} explicitQuestions={explicitQuestions} decisionDataIncomplete={workspaceDataIncomplete} workDataIncomplete={workspaceDataIncomplete} understandingRecords={understandingRecords} understandingRecordsTruncated={understandingRecordsTruncated} understandingDataIncomplete={workspaceDataIncomplete} subjects={subjects} onBoardChange={switchBoard} onOpenSubject={openSubject} />
-      : <BoardPanel board={activeBoard} subjects={boardSubjects} context={contexts[activeBoard]} selectedSubject={selectedSubject} detail={detail} detailLoading={detailLoading} historyLoading={historyLoading} allSubjects={subjects} onOpenSubject={openSubject} onOpenRelatedSubject={openRelatedSubject} onCopyCorrection={copyCorrectionPrompt} onLoadMoreHistory={loadMoreHistory} />}
+      ? <OverviewPanel recentChanges={recentChanges} workRecords={workRecords} explicitQuestions={explicitQuestions} aiDecisions={aiDecisions} decisionDataIncomplete={workspaceDataIncomplete} workDataIncomplete={workspaceDataIncomplete} understandingRecords={understandingRecords} understandingRecordsTruncated={understandingRecordsTruncated} understandingDataIncomplete={workspaceDataIncomplete} subjects={subjects} onBoardChange={switchBoard} onOpenSubject={openSubject} />
+      : <BoardPanel board={activeBoard} subjects={boardSubjects} context={contexts[activeBoard]} selectedSubject={selectedSubject} detail={detail} detailLoading={detailLoading} historyLoading={historyLoading} allSubjects={subjects} onOpenSubject={openSubject} onOpenRelatedSubject={openRelatedSubject} onLoadMoreHistory={loadMoreHistory} />}
   </div>;
 }
 
-function OverviewPanel({ recentChanges, workRecords, explicitQuestions, decisionDataIncomplete, workDataIncomplete, understandingRecords, understandingRecordsTruncated, understandingDataIncomplete, subjects, onBoardChange, onOpenSubject }: {
+function OverviewPanel({ recentChanges, workRecords, explicitQuestions, aiDecisions, decisionDataIncomplete, workDataIncomplete, understandingRecords, understandingRecordsTruncated, understandingDataIncomplete, subjects, onBoardChange, onOpenSubject }: {
   recentChanges: RecoveryRecord[];
   workRecords: Array<{ record: WorkspaceRecord; state: WorkspaceWorkState }>;
   explicitQuestions: WorkspaceRecord[];
+  aiDecisions: WorkspaceRecord[];
   decisionDataIncomplete: boolean;
   workDataIncomplete: boolean;
   understandingRecords: WorkspaceRecord[];
@@ -375,12 +350,6 @@ function OverviewPanel({ recentChanges, workRecords, explicitQuestions, decision
   const subjectById = new Map(subjects.map((subject) => [subject.id, subject]));
   return <div className="workspace-overview">
     <section className="workspace-intro-grid">
-      <article className="workspace-panel workspace-intro-panel">
-        <span className="workspace-panel-kicker">先看这里</span>
-        <h2>把状态当作可核对的工作面</h2>
-        <p>四个板块保留不同范围；当前记录和历史记录分开显示；来源时间用于判断新鲜度。普通工具调用、测试和实现细节默认收在展开区里。</p>
-        <div className="workspace-agreement"><ShieldCheck size={16} /><span>讨论任务负责方向与必要验收；执行任务负责已授权范围内的实现、验证、提交推送和回传。</span></div>
-      </article>
       <article className="workspace-panel workspace-decision-panel">
         <div className="workspace-panel-heading"><span className="workspace-panel-kicker">需要你决定</span><Info size={15} /></div>
         {explicitQuestions.length > 0
@@ -388,6 +357,14 @@ function OverviewPanel({ recentChanges, workRecords, explicitQuestions, decision
           : decisionDataIncomplete
             ? <><strong>当前数据未完整加载</strong><p>现在不能确定是否还有需要你决定的事项。请先刷新，或进入相关主题查看完整当前记录。</p></>
             : <><strong>暂无明确需要你决定的事项</strong><p>只有明确标记为需要你决定的当前记录才会出现在这里；普通问题会留在相关主题中。</p></>}
+      </article>
+      <article className="workspace-panel workspace-decision-panel">
+        <div className="workspace-panel-heading"><span className="workspace-panel-kicker">AI 已替你做的决定</span><Info size={15} /></div>
+        {aiDecisions.length > 0
+          ? <>{decisionDataIncomplete && <p className="workspace-newer-warning">以下是已读到的明确 AI 决定；当前摘要未完整加载，可能还有未加载项。</p>}<div className="workspace-ai-decision-list">{aiDecisions.map((record) => <article key={record.id}><strong>{record.title}</strong><p>{excerpt(recordDisplayContent(record).text, 180)}</p>{record.rationale && <details className="workspace-ai-decision-details"><summary>为什么这样决定</summary><p>{record.rationale}</p></details>}<small className="workspace-ai-decision-meta">来源 {record.source_locator || "未标记"} · {shortTime(record.observed_at)}</small></article>)}</div></>
+          : decisionDataIncomplete
+            ? <><strong>当前数据未完整加载</strong><p>现在不能确认是否还有明确由 AI 替你做出的决定。请先刷新，或进入相关主题查看完整当前记录。</p></>
+            : <><strong>暂无明确由 AI 替你做出的决定</strong><p>只有明确标记、带来源且已报告的 AI 决定才会出现在这里；执行观察和用户自己的决定不会被误标。</p></>}
       </article>
     </section>
 
@@ -406,8 +383,8 @@ function OverviewPanel({ recentChanges, workRecords, explicitQuestions, decision
     </section>
 
     <section className="workspace-section">
-      <div className="workspace-section-heading"><div><span className="workspace-panel-kicker">当前理解</span><h2>可验证的工作记忆</h2></div><span className="workspace-muted">区分表达、执行报告与推断</span></div>
-      <div className="workspace-understanding-grid">
+      <div className="workspace-section-heading"><div><span className="workspace-panel-kicker">当前理解</span><h2>可验证的工作记忆</h2></div><span className="workspace-muted">只展示有来源的方向、目标与约定</span></div>
+      <div className="workspace-understanding-grid workspace-understanding-grid-single">
         <div className="workspace-panel workspace-understanding-panel">
           {understandingRecords.length === 0
             ? <div className="workspace-empty"><Info size={20} /><p>{understandingDataIncomplete ? "当前摘要未完整加载，暂不能确认是否还有当前理解。" : "暂无有来源的当前理解；不凭空生成个人画像。"}</p></div>
@@ -421,12 +398,6 @@ function OverviewPanel({ recentChanges, workRecords, explicitQuestions, decision
               </article>;
             })}
           {understandingRecordsTruncated && <p className="workspace-newer-warning">当前理解超过 8 条，首页仅展示前 8 条；请使用上方板块入口继续查看其余主题。</p>}
-        </div>
-        <div className="workspace-panel workspace-correction-panel">
-          <span className="workspace-panel-kicker">如何更正</span><h3>发现不准确时，提交一条更正</h3>
-          <p>页面不直接覆盖正文。请说明哪句话不准确、正确内容、来源和观察时间；系统会追加记录并保留原来的变化轨迹。</p>
-          <code>我发现“当前内容”不准确，正确应为：“请填写正确内容”。来源：请填写来源；观察时间：请填写时间。</code>
-          <small>主题详情会自动带出定位信息，不需要手工整理内部字段。</small>
         </div>
       </div>
     </section>
@@ -443,14 +414,14 @@ function OverviewPanel({ recentChanges, workRecords, explicitQuestions, decision
 }
 
 function ChangeColumn({ title, state, records, empty }: { title: string; state: WorkspaceWorkState; records: Array<{ record: WorkspaceRecord; state: WorkspaceWorkState }>; empty: string }) {
-  return <article className="workspace-change-column"><div className="workspace-change-heading"><span className={`workspace-status-dot ${workStateClass(state)}`} /><h3>{title}</h3><b>{records.length}</b></div>{records.length === 0 ? <p className="workspace-column-empty">{empty}</p> : <div className="workspace-change-list">{records.slice(0, 4).map(({ record }) => <article key={record.id}><div className="workspace-record-top"><span className={`workspace-status-pill ${workStateClass(state)}`}>{workStateLabel(state)}</span><span>{record.subject_id}</span></div><strong>{record.title}</strong><p>{excerpt(recordDisplayContent(record).text, 118)}</p><small>{shortTime(record.observed_at)}</small></article>)}</div>}</article>;
+  return <article className="workspace-change-column"><div className="workspace-change-heading"><span className={`workspace-status-dot ${workStateClass(state)}`} /><h3>{title}</h3><b>{records.length}</b></div>{records.length === 0 ? <p className="workspace-column-empty">{empty}</p> : <div className="workspace-change-list">{records.slice(0, 4).map(({ record }) => { const summary = workspaceRecordSummary(record); return <article key={record.id}><div className="workspace-record-top"><span className={`workspace-status-pill ${workStateClass(state)}`}>{workStateLabel(state)}</span><span>{record.subject_id}</span></div><strong>{record.title}</strong>{summary !== record.title && <p>{excerpt(summary, 118)}</p>}<small>{shortTime(record.observed_at)}</small></article>; })}</div>}</article>;
 }
 
 function RecoveryEvent({ event }: { event: RecoveryRecord }) {
   return <article className="workspace-event"><div className="workspace-event-head"><strong>{event.title}</strong><span className={`workspace-status-pill ${recoveryStatusClass(event.status)}`}>{evidenceLabel(event.type, event.status)}</span></div><p>{event.content}</p><div className="workspace-event-meta"><span>记录 {shortTime(event.occurredAt)}</span>{event.commit && <span>提交 {event.commit.slice(0, 8)}</span>}{event.branch && <span>分支 {event.branch}</span>}</div>{(event.verification || event.nextStep || (event.evidence && event.evidence.length > 0)) && <details><summary>验证与后续</summary>{event.verification && <p><b>验证：</b>{event.verification}</p>}{event.nextStep && <p><b>下一步：</b>{event.nextStep}</p>}{event.evidence && event.evidence.length > 0 && <ul>{event.evidence.map((item, index) => <li key={`${event.id}-evidence-${index}`}>{item}</li>)}</ul>}</details>}</article>;
 }
 
-function BoardPanel({ board, subjects, context, selectedSubject, detail, detailLoading, historyLoading, allSubjects, onOpenSubject, onOpenRelatedSubject, onCopyCorrection, onLoadMoreHistory }: {
+function BoardPanel({ board, subjects, context, selectedSubject, detail, detailLoading, historyLoading, allSubjects, onOpenSubject, onOpenRelatedSubject, onLoadMoreHistory }: {
   board: BoardId;
   subjects: WorkspaceSubject[];
   context: WorkspaceContext | null;
@@ -461,7 +432,6 @@ function BoardPanel({ board, subjects, context, selectedSubject, detail, detailL
   allSubjects: WorkspaceSubject[];
   onOpenSubject: (id: string) => void;
   onOpenRelatedSubject: (id: string) => void;
-  onCopyCorrection: (subjectId: string, slot: string | null | undefined, recordId?: string, currentText?: string) => void;
   onLoadMoreHistory: () => void;
 }) {
   const definition = BOARD_BY_ID.get(board) || BOARD_DEFINITIONS[0];
@@ -485,19 +455,19 @@ function BoardPanel({ board, subjects, context, selectedSubject, detail, detailL
           return <button className={selectedSubject?.id === subject.id ? "workspace-subject-card active" : "workspace-subject-card"} key={subject.id} onClick={() => onOpenSubject(subject.id)}><div className="workspace-subject-card-head"><span className="workspace-subject-status">{subjectStatusLabel(subject.status)}</span><span>已更新 {shortTime(subject.updated_at)}</span></div><h3>{subject.title}</h3><p>{summary}</p><footer><span>{currentCount} 条当前记录</span><span>来源时间 {shortTime(sourceTime)}</span><ChevronRight size={14} /></footer></button>;
         })}</div>}
       </section>
-      <section className="workspace-subject-detail">{detailLoading ? <div className="workspace-empty workspace-panel"><RefreshCw size={20} className="spin" /><p>正在读取主题详情…</p></div> : detail && selectedSubject?.id === detail.id ? <SubjectDetail detail={detail} allSubjects={allSubjects} historyLoading={historyLoading} onLoadMoreHistory={onLoadMoreHistory} onOpenRelatedSubject={onOpenRelatedSubject} onCopyCorrection={onCopyCorrection} /> : <div className="workspace-empty workspace-panel"><FileText size={22} /><p>{subjects.length > 0 ? "选择左侧主题查看当前内容、来源和历史" : "这个板块还没有主题详情"}</p><small>当前内容、来源时间和历史记录会在这里分开呈现。</small></div>}</section>
+      <section className="workspace-subject-detail">{detailLoading ? <div className="workspace-empty workspace-panel"><RefreshCw size={20} className="spin" /><p>正在读取主题详情…</p></div> : detail && selectedSubject?.id === detail.id ? <SubjectDetail detail={detail} allSubjects={allSubjects} historyLoading={historyLoading} onLoadMoreHistory={onLoadMoreHistory} onOpenRelatedSubject={onOpenRelatedSubject} /> : <div className="workspace-empty workspace-panel"><FileText size={22} /><p>{subjects.length > 0 ? "选择左侧主题查看当前内容、来源和历史" : "这个板块还没有主题详情"}</p><small>当前内容、来源时间和历史记录会在这里分开呈现。</small></div>}</section>
     </div>
-    {selectedContext && selectedContext.newer_material_available && <p className="workspace-newer-warning">当前主题关联来源有更新材料，详情页按当前存档显示；请通过更正流程核对后再改变当前头。</p>}
+    {selectedContext && selectedContext.newer_material_available && <p className="workspace-newer-warning">当前主题关联来源有更新材料，详情页按当前存档显示；如需改变当前信息，请在相关协作入口核对后处理。</p>}
   </div>;
 }
 
-function SubjectDetail({ detail, allSubjects, historyLoading, onLoadMoreHistory, onOpenRelatedSubject, onCopyCorrection }: { detail: WorkspaceSubjectDetail; allSubjects: WorkspaceSubject[]; historyLoading: boolean; onLoadMoreHistory: () => void; onOpenRelatedSubject: (id: string) => void; onCopyCorrection: (subjectId: string, slot: string | null | undefined, recordId?: string, currentText?: string) => void }) {
+function SubjectDetail({ detail, allSubjects, historyLoading, onLoadMoreHistory, onOpenRelatedSubject }: { detail: WorkspaceSubjectDetail; allSubjects: WorkspaceSubject[]; historyLoading: boolean; onLoadMoreHistory: () => void; onOpenRelatedSubject: (id: string) => void }) {
   const relatedSubjects = detail.references.filter((reference) => reference.kind === "subject");
   const sources = detail.sources || [];
   return <div className="workspace-detail-card">
     <header className="workspace-detail-head"><div><span className="workspace-panel-kicker">{BOARD_BY_ID.get(detail.board)?.label || detail.board} · 状态详情</span><h2>{detail.title}</h2><p><code>{detail.id}</code> · {subjectStatusLabel(detail.status)} · 已更新 {shortTime(detail.updated_at)}</p></div><div className="workspace-detail-time"><span>来源时间</span><strong>{shortTime(detail.source_time)}</strong><small>现在展示已登记信息</small></div></header>
 
-    <section className="workspace-detail-section"><div className="workspace-section-heading"><div><span className="workspace-panel-kicker">当前</span><h3>现在有效的信息</h3></div><span className="workspace-muted">新的记录会替代当前内容，原记录仍保留</span></div>{detail.current.length === 0 ? <div className="workspace-detail-empty">暂无当前记录。</div> : <div className="workspace-current-records">{detail.current.map((record) => { const display = recordDisplayContent(record); return <article className="workspace-record-card" key={record.id}><div className="workspace-record-top"><span className="workspace-record-kind">{kindLabel(record.kind)}</span><span>{originLabel(record.origin, record.assertion)}</span></div><h4>{record.title}</h4><p>{display.text || "正文未在本次摘要中加载，请补读主题详情。"}</p>{display.needsMore && <small className="workspace-record-preview-note">{display.text ? "仅显示部分摘要。" : "正文需补读。"}</small>}<footer><span>观察 {displayTime(record.observed_at)}</span><span>记录 {displayTime(record.recorded_at)}</span><button onClick={() => onCopyCorrection(detail.id, record.slot, record.id, display.text)}>定位更正 <ArrowUpRight size={13} /></button></footer><details className="workspace-record-location"><summary>查看定位</summary><code>主题 {detail.id} · 记录 {record.id}{record.slot ? ` · 当前项 ${record.slot}` : ""}</code></details></article>; })}</div>}</section>
+    <section className="workspace-detail-section"><div className="workspace-section-heading"><div><span className="workspace-panel-kicker">当前</span><h3>现在有效的信息</h3></div><span className="workspace-muted">新的记录会替代当前内容，原记录仍保留</span></div>{detail.current.length === 0 ? <div className="workspace-detail-empty">暂无当前记录。</div> : <div className="workspace-current-records">{detail.current.map((record) => { const display = recordDisplayContent(record); return <article className="workspace-record-card" key={record.id}><div className="workspace-record-top"><span className="workspace-record-kind">{kindLabel(record.kind)}</span><span>{originLabel(record.origin, record.assertion)}</span></div><h4>{record.title}</h4><p>{display.text || "正文未在本次摘要中加载，请补读主题详情。"}</p>{display.needsMore && <small className="workspace-record-preview-note">{display.text ? "仅显示部分摘要。" : "正文需补读。"}</small>}<footer><span>观察 {displayTime(record.observed_at)}</span><span>记录 {displayTime(record.recorded_at)}</span></footer></article>; })}</div>}</section>
 
     <section className="workspace-detail-section workspace-source-section"><div className="workspace-section-heading"><div><span className="workspace-panel-kicker">证据</span><h3>来源与新鲜度</h3></div><span className="workspace-muted">{sources.length} 个已登记来源</span></div>{sources.length === 0 ? <div className="workspace-detail-empty">暂无来源；当前主题只显示已存档记录。</div> : <div className="workspace-source-list">{sources.map((source, index) => <div className="workspace-source-row" key={`${source.source_type}-${source.id || source.reference.locator || index}`}><div><span className={`workspace-source-status ${source.status}`}>{sourceStatusLabel(source.status)}</span><strong>{sourceText(source.reference)}</strong></div><span>{source.observed_at ? `观察 ${shortTime(source.observed_at)}` : source.updated_at ? `更新 ${shortTime(source.updated_at)}` : "时间未记录"}</span><small>{source.source_type}{source.commit_sha ? ` · ${source.commit_sha.slice(0, 8)}` : ""}</small></div>)}</div>}{detail.source_warnings.length > 0 && <p className="workspace-warning-note"><CircleAlert size={14} />有 {detail.source_warnings.length} 个来源未能完整解析，页面不把它们当成已验证事实。</p>}</section>
 
@@ -505,6 +475,5 @@ function SubjectDetail({ detail, allSubjects, historyLoading, onLoadMoreHistory,
 
     <section className="workspace-detail-section"><details className="workspace-history-details"><summary><History size={15} /><span>变更记录（已加载 {detail.history.length} / 共 {detail.history_total}）</span><b>{detail.history_total}</b></summary>{detail.history.length === 0 ? <p className="workspace-detail-empty">暂无可返回的变更记录。</p> : <div className="workspace-history-list">{detail.history.map((record) => <article key={record.id}><div className="workspace-record-top"><span className="workspace-record-kind">{kindLabel(record.kind)}</span><span>{record.current ? "当前" : "历史"}</span><span>{shortTime(record.recorded_at)}</span></div><strong>{record.title}</strong><p>{excerpt(recordDisplayContent(record).text, 240)}</p><small><code>{record.id}</code>{record.replaces_id ? ` · 替代 ${record.replaces_id}` : ""}{record.replaced_by ? ` · 后续 ${record.replaced_by}` : ""}</small></article>)}</div>}{detail.history_next_offset !== null ? <button className="workspace-load-more" onClick={onLoadMoreHistory} disabled={historyLoading}>{historyLoading ? "正在读取…" : `继续读取历史（从第 ${detail.history_next_offset + 1} 条开始）`}</button> : detail.history.length > 0 ? <p className="workspace-history-complete">已加载全部可返回的变更记录。</p> : null}</details></section>
 
-    <aside className="workspace-correction-callout"><div><Info size={17} /><strong>发现不准确时怎么改</strong></div><p>请回到 Codex 入口，说清哪句话不准确、正确内容、来源和观察时间。系统会追加一条更正记录，不覆盖原来的变化轨迹。</p><button onClick={() => onCopyCorrection(detail.id, detail.current[0]?.slot, detail.current[0]?.id, detail.current[0] ? recordDisplayContent(detail.current[0]).text : undefined)}>复制更正提示</button><details className="workspace-technical-details"><summary>查看系统定位</summary><p>主题 <code>{detail.id}</code>{detail.current[0]?.id ? ` · 当前记录 ${detail.current[0].id}` : ""}{detail.current[0]?.slot ? ` · 当前项 ${detail.current[0].slot}` : ""}</p></details></aside>
   </div>;
 }
