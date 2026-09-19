@@ -477,6 +477,11 @@ function KnowledgeListView({ kind, items, onOpen, reuse, onResolveCandidate }: {
         {allGroups.map((group) => <button key={group.label} className={categoryFilter === group.label ? "category-chip active" : "category-chip"} onClick={() => setCategoryFilter(group.label)}>{group.label} <small>{group.items.length}</small></button>)}
       </div>}
     </div>
+    {(kind === "note" || kind === "map") && <div className="knowledge-use-guide">
+      <div><strong>解决什么</strong><span>{kind === "map" ? "把结构、流程和关键分界放在一起，帮助定位可复用的层。" : "把项目记录中的方法、经验与判断整理成下次可调用的参考。"}</span></div>
+      <div><strong>什么时候值得打开</strong><span>{kind === "map" ? "需要判断接入位置、依赖关系或迁移边界时。" : "需要选择方案、排查风险或复用过去的处理方式时。"}</span></div>
+      <div><strong>边界</strong><span>命中不等于采用，采用也不等于有效；请打开原文、来源和相关条目核对。</span></div>
+    </div>}
     {kind === "note" && reuse && (reuse.counts.calls > 0 || reuse.counts.results > 0) && <details className="reuse-panel">
       <summary>
         <strong>知识复用</strong>

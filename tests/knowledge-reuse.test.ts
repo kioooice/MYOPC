@@ -31,6 +31,21 @@ tags: [测试]
 ${body}
 `;
 
+const mapEntry = (id: string, title: string, body: string) => `---
+id: ${id}
+kind: map
+map_type: architecture
+title: ${title}
+status: 当前理解
+summary: ${title} 的结构与边界
+updated: 2026-09-15
+tags: [测试, 图谱]
+related: []
+---
+
+${body}
+`;
+
 const modelResponse = (content: unknown) => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(content) } }] }), { status: 200, headers: { "content-type": "application/json" } });
 
 beforeEach(() => {
@@ -77,6 +92,23 @@ describe("开发知识复用 · context", () => {
     expect(result.items[0].category).toBe("经验");
     expect(result.items[0].content).toContain("稳定输入之后再调判据");
     expect(result.items[0].reason).toContain("输入抖动");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("图谱进入同一候选池，并返回可读正文与截断信号", async () => {
+    const body = `## 结构图\n\n图谱入口与通用层的关系。\n\n${"边界说明。".repeat(1000)}`;
+    entryFile("maps/pipeline.md", mapEntry("map-pipeline", "内容处理管线", body));
+    entryFile("notes/unrelated.md", noteEntry("note-unrelated", "无关笔记", "不应被选择。"));
+    syncKnowledge();
+    const fetchMock = vi.fn(async () => modelResponse({ selected: [{ id: "map-pipeline", reason: "当前任务需要按处理层定位复用边界", confidence: 96 }] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await selectReusableKnowledge({ repository: "kioooice/MYOPC", task: "判断网页内容处理应该接入哪一层" });
+    expect(result.used).toBe(true);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ id: "map-pipeline", kind: "map" });
+    expect(result.items[0].content).toContain("## 结构图");
+    expect(result.items[0].content).toContain("（正文过长，已截断）");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

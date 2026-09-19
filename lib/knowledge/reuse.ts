@@ -170,11 +170,17 @@ function contextItem(id: string, reason: string): ReuseContextItem | null {
 }
 
 function knowledgePool() {
-  const notes = listKnowledgeEntries({ kind: "note" }).slice(0, MAX_POOL_ITEMS);
-  const briefs = listReadingNotes(notes.map((entry) => entry.id));
-  return notes.map((entry) => ({
+  const notes = listKnowledgeEntries({ kind: "note" });
+  const maps = listKnowledgeEntries({ kind: "map" });
+  // 图谱和笔记都属于可复用的“空间知识”。候选池过大时至少保留已存在的图谱，
+  // 避免笔记数量增长后 map 永远没有机会进入相关性判断。
+  const reservedMaps = maps.slice(0, Math.min(maps.length, MAX_POOL_ITEMS));
+  const entries = [...notes.slice(0, Math.max(0, MAX_POOL_ITEMS - reservedMaps.length)), ...reservedMaps];
+  const briefs = listReadingNotes(entries.map((entry) => entry.id));
+  return entries.map((entry) => ({
     entry,
     category: typeof entry.extra?.category === "string" && entry.extra.category.trim() ? entry.extra.category.trim() : "",
+    mapType: entry.kind === "map" && typeof entry.extra?.map_type === "string" && entry.extra.map_type.trim() ? entry.extra.map_type.trim() : "",
     brief: briefs.get(entry.id)?.content?.brief || "",
   }));
 }
@@ -183,6 +189,7 @@ function buildSelectionPrompt(repository: string, task: string, pool: ReturnType
   const lines = pool.map((item) => [
     `- id: ${item.entry.id}`,
     `  标题: ${item.entry.title}`,
+    `  类型: ${item.entry.kind === "map" ? `图谱${item.mapType ? `（${item.mapType}）` : ""}` : "笔记"}`,
     item.category ? `  分类: ${item.category}` : "",
     item.brief ? `  一句说明: ${item.brief}` : "",
     item.entry.summary ? `  摘要: ${item.entry.summary.slice(0, 220)}` : "",
