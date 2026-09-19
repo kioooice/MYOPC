@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, Briefcase, Building2, ChevronRight, CircleAlert, Clock3, Compass, FileText, History, Info, Link2, Megaphone, RefreshCw, UserRound } from "lucide-react";
-import { classifyWorkspaceWork, contextHasIncompleteData, evidenceLabel, isExplicitAgentDecision, isExplicitUserDecision, isOverviewUnderstandingRecord, recordDisplayContent, subjectContextHasIncompleteData, workspaceRecordSummary, workStateLabel, type WorkspaceWorkState } from "./workspace-view-model";
+import { classifyWorkspaceWork, contextHasIncompleteData, evidenceLabel, isExplicitAgentDecision, isExplicitUserDecision, isInternalProjectStatusRecord, isOverviewUnderstandingRecord, recordDisplayContent, subjectContextHasIncompleteData, workspaceRecordSummary, workStateLabel, type WorkspaceWorkState } from "./workspace-view-model";
 
 export type WorkspaceBoard = "overview" | "personal" | "personal_project" | "enterprise_project" | "media";
 type BoardId = Exclude<WorkspaceBoard, "overview">;
@@ -285,6 +285,7 @@ export default function WorkspaceView({ activeBoard, onBoardChange }: WorkspaceV
   const explicitQuestions = currentRecords.filter((record) => isExplicitUserDecision(record));
   const aiDecisions = currentRecords.filter((record) => isExplicitAgentDecision(record));
   const workRecords = currentRecords.flatMap((record) => {
+    if (isInternalProjectStatusRecord(record)) return [];
     const state = classifyWorkspaceWork(record);
     return state ? [{ record, state }] : [];
   });
@@ -361,7 +362,7 @@ function OverviewPanel({ recentChanges, workRecords, explicitQuestions, aiDecisi
       <article className="workspace-panel workspace-decision-panel">
         <div className="workspace-panel-heading"><span className="workspace-panel-kicker">AI 已替你做的决定</span><Info size={15} /></div>
         {aiDecisions.length > 0
-          ? <>{decisionDataIncomplete && <p className="workspace-newer-warning">以下是已读到的明确 AI 决定；当前摘要未完整加载，可能还有未加载项。</p>}<div className="workspace-ai-decision-list">{aiDecisions.map((record) => <article key={record.id}><strong>{record.title}</strong><p>{excerpt(recordDisplayContent(record).text, 180)}</p>{record.rationale && <details className="workspace-ai-decision-details"><summary>为什么这样决定</summary><p>{record.rationale}</p></details>}<small className="workspace-ai-decision-meta">来源 {record.source_locator || "未标记"} · {shortTime(record.observed_at)}</small></article>)}</div></>
+          ? <>{decisionDataIncomplete && <p className="workspace-newer-warning">以下是已读到的明确 AI 决定；当前摘要未完整加载，可能还有未加载项。</p>}<div className="workspace-ai-decision-list">{aiDecisions.map((record) => { const display = recordDisplayContent(record); return <article key={record.id}><strong>{record.title}</strong><p>{display.text || "正文未在本次摘要中加载，请打开主题详情补读。"}</p>{display.needsMore && <small className="workspace-record-preview-note">{display.text ? "仅显示部分摘要，正文未完整加载。" : "正文需补读。"}</small>}{record.rationale && <details className="workspace-ai-decision-details"><summary>为什么这样决定</summary><p>{record.rationale}</p></details>}<div className="workspace-ai-decision-meta"><span>来源 {record.source_locator || "未标记"} · {shortTime(record.observed_at)}</span><button onClick={() => onOpenSubject(record.subject_id)}>查看主题 <ChevronRight size={13} /></button></div></article>; })}</div></>
           : decisionDataIncomplete
             ? <><strong>当前数据未完整加载</strong><p>现在不能确认是否还有明确由 AI 替你做出的决定。请先刷新，或进入相关主题查看完整当前记录。</p></>
             : <><strong>暂无明确由 AI 替你做出的决定</strong><p>只有明确标记、带来源且已报告的 AI 决定才会出现在这里；执行观察和用户自己的决定不会被误标。</p></>}

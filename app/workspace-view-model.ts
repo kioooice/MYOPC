@@ -68,9 +68,14 @@ export function isExplicitAgentDecision(record: WorkspaceRecordModel) {
   return record.current !== false && record.kind === "decision" && record.slot === "ai_decision" && record.origin === "agent" && record.assertion === "reported" && Boolean(record.source_locator);
 }
 
+/** Keep MYOPC delivery status out of both homepage summaries; subject detail remains the source of truth. */
+export function isInternalProjectStatusRecord(record: WorkspaceRecordModel) {
+  return record.subject_id === INTERNAL_PROJECT_SUBJECT_ID && INTERNAL_PROJECT_STATUS_SLOTS.has(record.slot || "");
+}
+
 /** Keep internal delivery status and collaboration mechanics in subject detail, not personal understanding. */
 export function isOverviewUnderstandingRecord(record: WorkspaceRecordModel) {
-  return record.kind !== "question" && !OVERVIEW_EXCLUDED_SLOTS.has(record.slot || "") && !(record.subject_id === INTERNAL_PROJECT_SUBJECT_ID && INTERNAL_PROJECT_STATUS_SLOTS.has(record.slot || ""));
+  return record.kind !== "question" && !OVERVIEW_EXCLUDED_SLOTS.has(record.slot || "") && !isInternalProjectStatusRecord(record);
 }
 
 /** Status slots use their short, user-readable title in the work column instead of internal report prose. */

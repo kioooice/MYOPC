@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyWorkspaceWork, contextHasIncompleteData, evidenceLabel, isExplicitAgentDecision, isExplicitUserDecision, isOverviewUnderstandingRecord, recordDisplayContent, subjectContextHasIncompleteData, workspaceRecordSummary } from "../app/workspace-view-model";
+import { classifyWorkspaceWork, contextHasIncompleteData, evidenceLabel, isExplicitAgentDecision, isExplicitUserDecision, isInternalProjectStatusRecord, isOverviewUnderstandingRecord, recordDisplayContent, subjectContextHasIncompleteData, workspaceRecordSummary } from "../app/workspace-view-model";
 
 describe("workspace view state semantics", () => {
   it("only promotes an explicitly marked current record to the decision panel", () => {
@@ -18,6 +18,9 @@ describe("workspace view state semantics", () => {
   });
 
   it("keeps MYOPC delivery status in project detail and summarizes it by title in work columns", () => {
+    expect(isInternalProjectStatusRecord({ subject_id: "myopc-stage2", kind: "observation", slot: "stage", current: true })).toBe(true);
+    expect(isInternalProjectStatusRecord({ subject_id: "myopc-stage2", kind: "observation", slot: "next_step", current: true })).toBe(true);
+    expect(isInternalProjectStatusRecord({ subject_id: "another-project", kind: "observation", slot: "stage", current: true })).toBe(false);
     expect(isOverviewUnderstandingRecord({ subject_id: "myopc-stage2", kind: "observation", slot: "stage", current: true })).toBe(false);
     expect(isOverviewUnderstandingRecord({ subject_id: "myopc-stage2", kind: "observation", slot: "next_step", current: true })).toBe(false);
     expect(isOverviewUnderstandingRecord({ subject_id: "personal-opc-direction", kind: "statement", slot: "collaboration", current: true })).toBe(false);
