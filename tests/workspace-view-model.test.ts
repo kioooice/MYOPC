@@ -20,6 +20,7 @@ describe("workspace view state semantics", () => {
   it("keeps MYOPC delivery status in project detail and summarizes it by title in work columns", () => {
     expect(isOverviewUnderstandingRecord({ subject_id: "myopc-stage2", kind: "observation", slot: "stage", current: true })).toBe(false);
     expect(isOverviewUnderstandingRecord({ subject_id: "myopc-stage2", kind: "observation", slot: "next_step", current: true })).toBe(false);
+    expect(isOverviewUnderstandingRecord({ subject_id: "personal-opc-direction", kind: "statement", slot: "collaboration", current: true })).toBe(false);
     expect(isOverviewUnderstandingRecord({ subject_id: "another-project", kind: "observation", slot: "stage", current: true })).toBe(true);
     expect(isOverviewUnderstandingRecord({ subject_id: "myopc-stage2", kind: "question", slot: "open_question", current: true })).toBe(false);
     expect(workspaceRecordSummary({ subject_id: "myopc-stage2", kind: "observation", slot: "stage", title: "用户可读阶段", content: "内部验收报告", current: true })).toBe("用户可读阶段");

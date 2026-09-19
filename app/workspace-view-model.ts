@@ -43,6 +43,7 @@ export type WorkspaceWorkState = "in_progress" | "completed" | "blocked" | "unkn
 const WORK_STATE_SLOTS = new Set(["work_status", "work_state", "workflow_status"]);
 const INTERNAL_PROJECT_SUBJECT_ID = "myopc-stage2";
 const INTERNAL_PROJECT_STATUS_SLOTS = new Set(["stage", "next_step"]);
+const OVERVIEW_EXCLUDED_SLOTS = new Set(["collaboration"]);
 
 function normalizedValue(value: string | null | undefined) {
   return (value || "").trim().toLowerCase().replace(/[：:]/g, "");
@@ -67,9 +68,9 @@ export function isExplicitAgentDecision(record: WorkspaceRecordModel) {
   return record.current !== false && record.kind === "decision" && record.slot === "ai_decision" && record.origin === "agent" && record.assertion === "reported" && Boolean(record.source_locator);
 }
 
-/** Keep the MYOPC delivery phase and next-step heads in the project detail, not personal understanding. */
+/** Keep internal delivery status and collaboration mechanics in subject detail, not personal understanding. */
 export function isOverviewUnderstandingRecord(record: WorkspaceRecordModel) {
-  return record.kind !== "question" && !(record.subject_id === INTERNAL_PROJECT_SUBJECT_ID && INTERNAL_PROJECT_STATUS_SLOTS.has(record.slot || ""));
+  return record.kind !== "question" && !OVERVIEW_EXCLUDED_SLOTS.has(record.slot || "") && !(record.subject_id === INTERNAL_PROJECT_SUBJECT_ID && INTERNAL_PROJECT_STATUS_SLOTS.has(record.slot || ""));
 }
 
 /** Status slots use their short, user-readable title in the work column instead of internal report prose. */
