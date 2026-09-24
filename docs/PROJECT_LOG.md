@@ -579,3 +579,24 @@
 - 主任务独立确认生产 `release=d44bd00`、补修模型测试 7/7；生产首页当前理解 / 当前工作均无 MYOPC `stage / next_step`，两个决定栏与更正区状态符合本轮范围。
 - 干净浏览器会话确认截断 AI `content_preview` 的局部提示与全局不完整提示共存，点击“查看主题”可进入“OPC 的一人公司方向与边界”且历史存在；390px 无横向溢出，控制台错误 0。AI 决定真实登记为空，继续如实显示为空。
 - 当前验收通过，下一步仅等待用户体验反馈；不进入下一阶段。
+
+## 2026-09-24 服务器磁盘占满排查与部署流程补齐
+
+**事实**
+
+- 服务器根盘 40G 用到 37G（98%）。用户怀疑与「30 分钟拉取一次」的定时任务有关。实测 `opc-knowledge-sync.timer`（`OnUnitActiveSec=30min`）只拉知识仓库（检出含 `.git` 共 2.2M）并调 `/knowledge/sync`、`/knowledge/process`，单次 5–9 秒，脚本里没有任何 docker 命令。
+- 占用来自 Docker：`/var/lib/docker` 19G，其中 44 个未使用镜像（唯一层合计 5.2G；即每次 `up -d --build` 留下的悬空层，加 2026-09-18 的三个 `rollback-*` 标签与 `deploy-myopc:latest`）和 4.53G 构建缓存。镜像创建时间集中在 09-11/12、09-16/17、09-19 三个部署日，与部署次数对应。
+
+**改动**
+
+- [DEPLOYMENT.md](DEPLOYMENT.md)：部署步骤补第 6 步「核对通过后清理构建残留」；删去步骤 4 中「保留旧镜像供回退」的无条件保留说法，回退策略改由镜像标签控制；新增「镜像与磁盘维护」小节，记录清理命令、回滚标签保留方式、不可清理的目录和排查顺序。
+
+**已验证**
+
+- 清理执行：`docker image prune -f` 删除 40 个悬空镜像，`docker builder prune -f` 回收 10.92G；`apt-get clean`、`journalctl --vacuum-size=100M`（回收 224M）、`pip cache purge` 与删除 `/home/ubuntu/.cache/pip/http-v2`、`npm cache clean --force`。根盘 37G → 24G（98% → 63%）。
+- 清理后核对：7 个容器全部 Up（`myopc`、karakeep 三个、openlist、postgresql、openresty），`/api/v1/health` 返回 `{"status":"ok","persistence":"sqlite","release":"cfe1adf"}`；保留 `opc-myopc:latest`、三个 `rollback-*20260918` 标签与 `deploy-myopc:latest`。
+
+**未解决**
+
+- 三个 09-18 的回滚标签（唯一层约 0.36G）与 `deploy-myopc:latest` 按用户要求保留，尚未确定「只留最近 1 个回滚」的清理时机。
+- 服务器仍运行 2026-09-19 部署的 `cfe1adf`；本次只清磁盘与补文档，未重新部署。

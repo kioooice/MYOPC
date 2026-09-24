@@ -62,10 +62,21 @@ npx tsx scripts/knowledge-sync.ts --force-entry id # 强制重做某一条
 1. 本地确认改动已提交并推送，记录提交 SHA。
 2. 服务器 `git -C /opt/apps/opc fetch` 并切到目标提交，工作区保持干净。
 3. 备份 `/opt/data/opc/myopc.sqlite`（SQLite backup API，校验完整性与外键）。
-4. 先 `docker compose -f deploy/opc-server.compose.yml build`，通过后更新 `.env` 的 `MYOPC_RELEASE` 并 `up -d --no-build`（项目名固定为 `opc`，构建参数带 `DEBIAN_MIRROR`）；保留旧镜像供回退。`.dockerignore` 排除 `.env` 与 `.env.*`，运行配置由 Compose 注入。
+4. 先 `docker compose -f deploy/opc-server.compose.yml build`，通过后更新 `.env` 的 `MYOPC_RELEASE` 并 `up -d --no-build`（项目名固定为 `opc`，构建参数带 `DEBIAN_MIRROR`）。`.dockerignore` 排除 `.env` 与 `.env.*`，运行配置由 Compose 注入。
 5. 核对 `MYOPC_RELEASE`、`/api/v1/health`、`/api/v1/knowledge` 与 `:3010` 的实际返回。
+6. 核对通过后清理本次构建残留：`sudo docker image prune -f && sudo docker builder prune -f`（只删悬空镜像与构建缓存，运行中的容器和带标签镜像不受影响）。
 
 知识内容与代码分开更新：只改知识仓库时不需要重新部署，同步一次即可；改代码或依赖才重建容器。
+
+### 镜像与磁盘维护
+
+系统盘 40G，每次 `up -d --build` 都会留下一个悬空镜像（唯一层约 40–130M）和对应构建缓存，不清理时两周就能占满。2026-09-24 实测：根盘 37G/40G（98%），其中 `/var/lib/docker` 19G——44 个未使用镜像的唯一层合计 5.2G、构建缓存 4.53G；清理后 24G/40G（63%）。
+
+- 每次部署按第 6 步执行：`sudo docker image prune -f && sudo docker builder prune -f`。
+- 回退镜像按需保留：`sudo docker images opc-myopc`，删除多余的 `rollback-*` 标签与不再使用的 `deploy-myopc`。
+- 必要时清系统缓存：`sudo apt-get clean`、`sudo journalctl --vacuum-size=100M`、`sudo -u ubuntu python3 -m pip cache purge`、`sudo npm cache clean --force`。
+- 不要动：`/opt/data`（运行数据与知识仓库检出）、`/opt/backups`（SQLite 备份）、`/home/ubuntu/.cache/ms-playwright` 与 `/opt/apps/easel/.venv`（Easel 发布依赖）。
+- 排查顺序：`df -h /` → `docker system df` → `sudo du -x -h -d1 /var/lib/docker`。服务器上的知识同步定时任务（30 分钟一次）只拉知识仓库、只调同步与加工接口，不构建镜像，与磁盘增长无关。
 
 ### 服务器上的知识同步
 
