@@ -3,6 +3,25 @@
 原始阶段记录只有这一份，按日期追加；`docs/STATUS.md` 只写当前状态，覆盖式更新。
 跨项目的整理与提炼交给独立知识仓库 `kioooice/MYOPC-Knowledge`，这里不重复维护。
 
+## 2026-09-25 对话背景最小读写链路
+
+**新增进展**
+
+- 复用现有私有 workspace，新建 `personal-collaboration-preferences`；个人当前理解保存在记录 `a4e8837b-cf7d-488b-975c-27001cda3e61`，源定位为讨论 task `01a0d506-0f7a-7af0-9fd7-7a411f19d32f`，没有写入个人偏好全文到 Git。更新沿用 `expected_current_id`，旧 current 保留为 history。
+- 提醒时机的重复选项仅作为历史 question `3967175a-29b1-414f-84c9-48e768c0c4c1` 保存，并标记 `origin=agent / assertion=inferred`；不放入当前偏好头，不触发提醒。
+- 全局短规则在判断型对话中用固定主题 ID 读取 workspace current，不依赖相关性模型从知识候选中挑中个人信息；项目状态要求恢复实际被讨论项目，避免误用当前 MYOPC。
+
+**已验证**
+
+- 通过已配置 Bridge 成功创建主题并追加两条记录；随后真实 CLI `opc workspace --action context --stdin` 仅输入主题 ID，无偏好正文或 query，返回 `used=true`、`scope.query=null`、当前记录全文及 `origin=user / assertion=reported / source_locator=thread://...`；返回历史引用可区分已替代记录和未决 question。
+- 从 `D:\Projects\video` 调用 `opc bootstrap --task "结合本人长期偏好与 video 项目历史，判断知识分享流量低时是否改做 AI 人物视频"`，返回项目 `video-project`、分支 `main`、提交 `f5bcc22`、44 条项目记录及近期技术分享 / 角色动作反馈。响应标记 `truncated=true`，33 条记录来自较早提交，故只把返回内容当作项目线索。
+- `opc context --task` 在 MYOPC 查询只返回了通用方法笔记，证明它不能代替独立的个人 workspace 读取。本轮没有更改 OPC API、selector、服务端版本或部署。
+
+**未解决 / 未验证**
+
+- 新全局触发规则尚未由一个不携带偏好正文的全新 Codex 任务自动触发；建议是否因此改变仍由讨论任务独立验收，本记录不声称跨任务行为已验证。
+- 目标项目如果无法通过已知项目映射或 workspace subject 解析，规则要求明确说明缺失；video bootstrap 本身有旧提交记录和截断提示，后续事实需结合当前仓库复核。
+
 ## 2026-09-20 Jev 知识选择有限对照（不接入）
 
 **新增进展**

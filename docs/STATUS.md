@@ -1,5 +1,14 @@
 # 当前状态
 
+## 2026-09-25 对话背景最小读写链路（独立增量，待跨任务复验）
+
+- 私有 workspace 新增个人主题 `personal-collaboration-preferences`。当前记录 `a4e8837b-cf7d-488b-975c-27001cda3e61` 为 `origin=user / assertion=reported`，来源为讨论 task `01a0d506-0f7a-7af0-9fd7-7a411f19d32f`，通过原有 `set_current` / `expected_current_id` 机制保存；初始记录 `719f61c5-a3b9-4c53-b5f4-3ca597043888` 保留在历史。
+- “提醒时机”回答歧义单独留为历史 question `3967175a-29b1-414f-84c9-48e768c0c4c1`（`origin=agent / assertion=inferred`），不在当前头，不构成主动通知授权。
+- 用户级全局规则按固定 subject ID 读取个人当前理解，不对偏好全文做任务关键词匹配；只有背景可能改变建议时触发，机械任务不读。另按实际谈论的项目恢复其自身 `opc bootstrap` / workspace 状态，知识选择结果不替代个人或项目状态。
+- 本轮通过已配置 Bridge（`http://124.222.190.89:3010`）写入，创建及记录均返回 `saved=true / queued=false`。真实 CLI context 请求只带 `subject_ids`，响应 `scope.query=null`，返回完整个人 current、`origin/assertion/source_locator`、历史引用和记录 ID。
+- 项目状态实测从 `D:\Projects\video` 运行 bootstrap：身份 `video-project`、branch `main`、commit `f5bcc22`，44 条记录；响应标记 `truncated=true` 且 33 条对应较早提交。可见近期事实包括“不做固定系列、普通技术分享（痛点→工具→拆解）”及 Q 版角色与真人拳击动作不搭配的用户反馈。本轮只验证状态可读，不将其扩写为新的内容策略。
+- 未改 OPC 应用代码或部署；既有服务版本以最近一次已验证记录 `cfe1adf` 为准。仍待讨论任务用不附带偏好正文的新任务独立复验自动触发及回答是否因背景而变化；本轮不进入页面第二轮重组、反馈生成或阶段 4/5。
+
 ## 2026-09-19 阶段 3 后空间知识可用性增量（当前收口）
 
 - 本轮是阶段 3 第一轮主任务验收通过后的用户授权增量，不改变阶段坐标；当前等待真实使用反馈，不启动下一阶段。
