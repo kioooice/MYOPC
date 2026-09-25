@@ -10,6 +10,7 @@
 - 复用现有私有 workspace，新建 `personal-collaboration-preferences`；个人当前理解保存在记录 `a4e8837b-cf7d-488b-975c-27001cda3e61`，源定位为讨论 task `01a0d506-0f7a-7af0-9fd7-7a411f19d32f`，没有写入个人偏好全文到 Git。更新沿用 `expected_current_id`，旧 current 保留为 history。
 - 提醒时机的重复选项仅作为历史 question `3967175a-29b1-414f-84c9-48e768c0c4c1` 保存，并标记 `origin=agent / assertion=inferred`；不放入当前偏好头，不触发提醒。
 - 全局短规则在判断型对话中用固定主题 ID 读取 workspace current，不依赖相关性模型从知识候选中挑中个人信息；项目状态要求恢复实际被讨论项目，避免误用当前 MYOPC。
+- 完成状态回流时既有 `opc result` 自动生成结果 `task-20260924-005` 并新增两条待整理候选；实时池为 35 pending / 0 resolved。两条候选保持待处理，未作合并、暂存或舍弃。自动回流将两条知识使用效果标为 `effective`，这是模型分类，未独立验证，不作为本轮行为效果证据。
 
 **已验证**
 
