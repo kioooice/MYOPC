@@ -14,12 +14,13 @@
 **关键决策**
 
 - 只用显式 `progress` 更新阶段；普通 success / decision / finding 不会把任务结果推断成阶段完成。多条旧待办使用合法 `finding` 并逐条 supersede，避免更正事件被误识别为阶段，也避免依赖回流事件的先后排序。
-- 回流携带已核实的 `summary`，避免已知事实触发不需要的模型候选提炼；阶段事件本身保持模型免费。
+- 回流携带已核实的 `summary`，避免已知事实触发不需要的模型候选提炼；阶段事件不调用服务器模型。
 
 **已验证**
 
 - 定向 Bridge / progress 回归 30/30；完整测试 108/108、lint 与 TypeScript 检查通过；`git diff --check` 通过（Git 仅提示工作副本换行将转为 CRLF）。
-- 安装版 `opc-bridge 0.2.1` 与仓库 `bridge/opc.mjs` SHA-256 一致；`opc doctor` 显示 `release=cfe1adf`、reachable、队列 0。真实 `video-project` bootstrap 已核验新阶段、唯一音频下一步、旧阶段无效及阻塞为空。
+- 安装版 `opc-bridge 0.2.1` 与仓库 `bridge/opc.mjs` SHA-256 一致；`opc doctor` 显示 `release=cfe1adf`、reachable、队列 0。
+- 讨论任务独立验收核对本地 HEAD 与 `git ls-remote` 均为 `b840031`，读取了 108/108 测试及 lint / TypeScript 通过结果；并从 video 工作区实际调用 Bridge 强制 bootstrap，确认阶段为 `evt-20261008-4ac83e`、唯一下一步是未制作的音频修订、`blockers=[]`、`conflicts=[]`，video 工作区 clean。
 
 **未解决 / 边界**
 
