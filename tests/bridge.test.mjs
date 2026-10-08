@@ -60,6 +60,56 @@ describe("OPC Bridge", () => {
     expect(parsed.flags.task).toBe("T");
   });
 
+  it("一次 result 请求合并完整任务结果与阶段替代事件，并清除 bootstrap 缓存", async () => {
+    const home = tempHome();
+    const config = { enabled: true, serverUrl: "http://127.0.0.1:1", timeoutMs: 1000, cacheMinutes: 10, auth: {} };
+    const parsed = parseArgs([
+      "result", "--repo", "video-project", "--task", "阶段交付校正", "--outcome", "success",
+      "--branch", "main", "--commit", "abc1234", "--machine", "TEST-PC", "--submission-id", "sub-bridge-combined",
+      "--change", "完成整片", "--validation", "完整解码和播放通过", "--summary", "成片已交付，后续只待音频修订",
+      "--event", "progress", "--title", "成片已交付", "--content", "影片完整播放通过",
+      "--status", "verified", "--verification", "浏览器从头播放至 ended=true", "--next", "制作最小音频修订",
+      "--supersedes", "evt-old-phase",
+    ]);
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).endsWith("/api/v1/agent/bootstrap")) {
+        return jsonResponse({
+          used: true, repository: "video-project", branch: "main", commit: "abc1234", machine: "TEST-PC",
+          counts: { records: 1, sameBranch: 1, otherBranch: 0, otherMachine: 0, olderCommit: 0 },
+          recent: [], decisions: [], environment: [], blockers: [], nextSteps: [], conflicts: [], notes: [], recordIds: [],
+        });
+      }
+      return jsonResponse({ saved: true, resultId: "task-combined", events: [{ id: "evt-new-phase", type: "progress" }] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const bootstrapFlags = { repo: "video-project", branch: "main", commit: "abc1234", machine: "TEST-PC" };
+      await runBootstrap({ flags: bootstrapFlags, config, cwd: process.cwd() });
+      const cacheFile = join(home, "cache", "bootstrap.json");
+      expect(Object.keys(JSON.parse(readFileSync(cacheFile, "utf8")))).toHaveLength(1);
+
+      const result = await runResult({ flags: parsed.flags, multi: parsed.multi, events: parsed.events, config, cwd: process.cwd() });
+      expect(result.saved).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(String(fetchMock.mock.calls[1][0])).toContain("/api/v1/agent/result");
+      const body = JSON.parse(fetchMock.mock.calls[1][1].body);
+      expect(body).toMatchObject({
+        task: "阶段交付校正", outcome: "success", repository: "video-project", submission_id: "sub-bridge-combined",
+        changes: ["完成整片"], validation: ["完整解码和播放通过"], summary: "成片已交付，后续只待音频修订",
+      });
+      expect(body.events).toHaveLength(1);
+      expect(body.events[0]).toMatchObject({ event_type: "progress", supersedes: "evt-old-phase", next_step: "制作最小音频修订", branch: "main", commit: "abc1234" });
+      expect(JSON.parse(readFileSync(cacheFile, "utf8"))).toEqual({});
+
+      const refreshed = await runBootstrap({ flags: bootstrapFlags, config, cwd: process.cwd() });
+      expect(refreshed.cached).not.toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it("凭据在本地就被替换掉，不进入上传载荷", () => {
     const result = redactSecrets("MYOPC_MODEL_API_KEY=sk-abcdefghijklmnopqrstuv 以及 Bearer abcdefghijklmnopqrstuv");
     expect(result.text).not.toContain("sk-abcdefghijklmnopqrstuv");

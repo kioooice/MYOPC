@@ -51,10 +51,11 @@ Map 的结构主体属于知识事实：结构图以 Mermaid 源码保存在知�
 
 1. `opc bootstrap`：POST 到 `/api/v1/agent/bootstrap`，带上仓库、分支、提交与未提交标记（机器字段存在，但只作为来源标注）。服务端只做筛选与组装——按分支相关性分层、再按时间排序，标注其他分支 / 更早提交的记录，列出未解除的阻塞与下一步，同一主题出现不同记录时显式列出冲突而不裁决。返回有长度上限，记录 ID 可用 `GET /api/v1/agent/events/:id` 继续读取。这一步不调用模型。适用范围：开发只在本机；其他机器只用浏览器查看 OPC 页面（不装 bridge、不在那里 bootstrap 或回流）。
 2. `opc context --task "..."`：Bridge 从 `git remote get-url origin` 解析 `owner/repo`（读不到时回落到目录名，也可用 config 的 `projects` 做本机路径映射），POST 到 `/api/v1/agent/context`。服务端先过两道 Gate——仓库能否识别、近期是否重复调用——再把全部 visible notes 的标题 / 分类 / 标签 / 一句话说明 / 摘要交给模型挑 0~3 条，相关性分数低于阈值直接丢弃；命中后才读取正文（最多 4000 字）返回。任何失败都返回 `used:false` 加可读 reason，不阻塞开发。
-3. `opc result`：POST 到 `/api/v1/agent/result`，一次回流可以只带阶段事件（`--event decision|progress|environment|finding|blocker|plan`），也可以带完整的任务结果（`--change / --validation / --finding / --knowledge-used`）。事件写入 `project_events`，批次写入 `agent_task_results`。
+3. `opc result`：POST 到 `/api/v1/agent/result`，一次回流可以只带阶段事件（`--event decision|progress|environment|finding|blocker|plan`），也可以带完整的任务结果（`--change / --validation / --finding / --knowledge-used`），或在同一请求中同时带两者。事件写入 `project_events`，批次写入 `agent_task_results`。
    - 状态语义：`planned`（计划）、`reported`（执行方报告）、`verified`（附验证依据）、`blocked`、`superseded`；`verified` 必须有验证方式或证据，否则按报告记录，服务器不会替执行方升级状态。
-   - 去重与更正：同一次回流重试带同一个 `submission_id`，服务端按（submission_id, 序号）判重，不重复写入；更正用 `--supersedes <记录 id>`，旧记录标记为 `superseded` 但保留历史。
-   - 模型边界：只回流事件时不调用模型；客户端已经提交总结或候选经验时也不调用模型；只有没有自带总结的任务结果才会让模型整理并提取 0~2 条候选经验。
+   - 阶段语义：普通任务成功、decision 或 finding 不自动推进阶段；恢复阶段只读取明确的 `plan / progress`。阶段变更时显式替代已过期的阶段 / 下一步事件，不能由服务端推断；只替代有依据过时的记录，不顺带关闭无关阻塞。
+   - 去重与更正：同一次回流重试带同一个 `submission_id`，服务端按（submission_id, 序号）判重，不重复写入；更正用 `--supersedes <记录 id>`，旧记录标记为 `superseded` 但保留历史。若多个旧事件各自携带过期下一步，可在一次调用中附多个带 `supersedes` 的合法 `finding` 事件；`correction` 不是事件类型。
+   - 模型边界：只回流事件时不调用模型；客户端已经提交总结或候选经验时也不调用模型；完整任务结果和事件共用原有结果提炼路径，不为事件另发请求，任务结果最多提炼一次。没有自带总结的任务结果才会让模型整理并提取 0~2 条候选经验。
    - 凭据：事件与任务字段在 Bridge 侧和服务器侧都会做一次脱敏，上传载荷里不出现 Token / 密码原文。
 4. 候选经验处置：`POST /api/v1/knowledge/candidates/:id/resolve`，状态为 `merged / added / hold / discarded`，记录理由、对应知识条目与适用的知识仓库提交；处理过的候选不再进入待整理列表，但保留历史。CLI 入口是 `opc candidates`。
 5. V0.2 仍然不自动改知识仓库、不做 embedding / 向量库 / MCP / 知识图谱。

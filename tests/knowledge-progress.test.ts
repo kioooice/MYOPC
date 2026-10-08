@@ -167,6 +167,97 @@ describe("bootstrap · 恢复摘要", () => {
     expect(summary.recent.some((record) => record.status === "superseded")).toBe(true);
   });
 
+  it("一次完整任务回流可替代旧阶段和过期下一步，保留其他分支与无关阻塞", async () => {
+    const oldPhase = saveSample([{
+      event_type: "progress", title: "旧阶段", content: "完整影片尚未交付", next_step: "检查补镜并合成整片", machine: "WIN-TEST", branch: "main",
+    }], "sub-old-phase").saved[0];
+    const oldStep = saveSample([{
+      event_type: "progress", title: "旧剪辑待办", content: "先完成检查", next_step: "核对旧版视频", machine: "WIN-TEST", branch: "main",
+    }], "sub-old-step").saved[0];
+    saveSample([{
+      event_type: "progress", title: "独立分支阶段", content: "feature 分支工作继续", next_step: "继续 feature 分支任务", machine: "WIN-TEST", branch: "feature-x",
+    }], "sub-feature-phase");
+    const unrelatedBlocker = saveSample([{
+      event_type: "blocker", title: "无关阻塞", content: "另一个问题仍待处理", machine: "WIN-TEST", branch: "main",
+    }], "sub-unrelated-blocker").saved[0];
+
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: JSON.stringify({ summary: "整片已交付，后续只待音频修订", candidates: [] }) } }],
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const phaseAt = new Date(Date.now() + 10_000).toISOString();
+    const findingAt = new Date(Date.now() + 20_000).toISOString();
+
+    const submission = {
+      repository,
+      task: "真人整片完成后的阶段状态校正",
+      outcome: "success",
+      changes: ["完成 76.96 秒真人整片"],
+      validation: ["完整解码通过；浏览器从头有声播放至 ended=true"],
+      submission_id: "sub-combined-phase-update",
+      machine: "WIN-TEST",
+      branch: "main",
+      commit: "abc1234",
+      events: [
+        {
+          event_type: "finding", title: "旧剪辑待办已完成",
+          content: "旧待办对应的检查与整片合成已完成；保留历史，不再作为当前下一步。",
+          status: "reported", machine: "WIN-TEST", branch: "main", commit: "abc1234", supersedes: oldStep.id, occurred_at: findingAt,
+        },
+        {
+          event_type: "progress", title: "真人整片已交付，音频修订待制作",
+          content: "76.96 秒影片已完成并交付；用户反馈总体效果提升。音频修订尚未制作。",
+          status: "verified", verification: "完整解码通过；浏览器有声播放从 0 秒至 76.96 秒，ended=true、error=null、muted=false。",
+          evidence: ["productions/night-shift/revision-02/PROGRESS.md", "output/night-shift/revision-02/validation.json", "output/night-shift/revision-02/browser-playback.json"],
+          next_step: "制作并试听角色声音与配乐的最小音频修订；尚未制作，不发布。",
+          machine: "WIN-TEST", branch: "main", commit: "abc1234", supersedes: oldPhase.id, occurred_at: phaseAt,
+        },
+      ],
+    };
+
+    const first = await recordTaskResult(submission);
+    expect(first.extraction).toBe("model");
+    expect(first.events).toHaveLength(2);
+    expect(first.events.map((event) => event.type)).toEqual(["finding", "progress"]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const retry = await recordTaskResult(submission);
+    expect(retry.deduped).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(listProjectEvents(repository)).toHaveLength(6);
+    expect(getProjectEvent(oldPhase.id)?.status).toBe("superseded");
+    expect(getProjectEvent(oldStep.id)?.status).toBe("superseded");
+    expect(getProjectEvent(unrelatedBlocker.id)?.status).toBe("blocked");
+
+    const main = buildRecoverySummary({ repository, branch: "main", machine: "WIN-TEST" });
+    expect(main.phase?.title).toBe("真人整片已交付，音频修订待制作");
+    expect(main.nextSteps.map((step) => step.text)).toEqual(["制作并试听角色声音与配乐的最小音频修订；尚未制作，不发布。"]);
+    expect(main.blockers.map((record) => record.id)).toEqual([unrelatedBlocker.id]);
+
+    const feature = buildRecoverySummary({ repository, branch: "feature-x", machine: "WIN-TEST" });
+    expect(feature.phase?.title).toBe("独立分支阶段");
+    expect(feature.nextSteps.map((step) => step.text)).toEqual(["继续 feature 分支任务"]);
+  });
+
+  it("普通成功结果或决定不隐式推进当前阶段", async () => {
+    const phase = saveSample([{
+      event_type: "progress", title: "仍在执行的阶段", content: "当前阶段记录", next_step: "继续当前任务", branch: "main", machine: "WIN-TEST",
+    }], "sub-stable-phase").saved[0];
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await recordTaskResult({
+      repository, task: "普通调研结果", outcome: "success", summary: "调研完成", changes: ["只完成调研"],
+      submission_id: "sub-ordinary-success", branch: "main", machine: "WIN-TEST",
+      events: [{ event_type: "decision", title: "保留当前路线", content: "不改变阶段", branch: "main", machine: "WIN-TEST" }],
+    });
+
+    const summary = buildRecoverySummary({ repository, branch: "main", machine: "WIN-TEST" });
+    expect(summary.phase?.id).toBe(phase.id);
+    expect(summary.nextSteps.map((step) => step.text)).toEqual(["继续当前任务"]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("当前阶段、阻塞和下一步只取当前分支，其他分支只作参考", () => {
     saveSample([{ event_type: "blocker", title: "main 上的阻塞", content: "main 卡住", next_step: "先修 main 的问题", machine: "WIN-TEST", branch: "main" }], "sub-scope-main");
     saveSample([

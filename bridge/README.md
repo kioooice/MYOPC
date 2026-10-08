@@ -8,6 +8,7 @@ opc context --task "改善目标区域识别稳定性"   # 取用历史知识
 opc result  --task "改善目标区域识别稳定性" --outcome success --change "把阈值判断改成先做输入稳定性检查" --validation "pnpm test 通过" --knowledge-used "some-note-id"
 opc result  --event decision --title "ASR 用 SenseAudio 承担" --content "WhisperX 对齐请求没有模型参数" --rationale "该请求是 provider-neutral request"
 opc result  --event progress --title "中文短视频流水线打通" --content "TTS → 对齐 → 字幕 → 渲染 → 成片" --verification "输出 output/zh-short-final.mp4" --status verified --next "接入 H3 画面"
+opc result  --task "整片交付后的状态更新" --outcome success --change "完成 76.96 秒影片" --validation "完整解码和有声播放通过" --summary "影片已交付，后续只待音频修订" --event progress --title "真人整片已交付" --content "实际成片已完整播放；音频修订尚未制作" --verification "浏览器从头播放至 ended=true" --status verified --next "制作最小音频修订" --supersedes evt-old-phase
 opc result  --event environment --title "本机 runtime 已选择" --content "Runtime Profile 指向本地 profile" --verification "hypit paths 显示本地 profile" --status verified
 opc result  --event blocker --title "渲染修复不可持久" --content "重装发行版后要重做修复" --next "补一个修复脚本"
 opc candidates                             # 查看待整理候选经验
@@ -71,6 +72,8 @@ powershell -ExecutionPolicy Bypass -File D:\Projects\myopc\bridge\install.ps1
 - 回流或 workspace 写入失败时返回 `{"saved":false,"queued":true,...}` 并把完整 body、请求 ID 和 HTTP 方法放进待重传队列；下一次任意命令会补发最多 3 条，每条最多重试 20 次，不无限重试、不阻断开发。workspace 的 409 会直接返回冲突详情，不自动覆盖；队列补发遇到 409 会保留项目并标记为 blocked，不再自动重试。
 - 网络失败、服务器不可用、模型未配置都不阻塞开发：命令始终以退出码 0 结束，并返回 `bridge_error` 之类的可读原因。
 - 同一次回流重试带同一个 `submission_id`，服务端按（submission_id, 序号）判重，不会重复写入；更正用 `--supersedes <记录 id>`，旧记录保留历史。
+- 任务结果和显式阶段事件可放在同一次 `opc result` 中：整次调用只发一个 `/agent/result` 请求，事件通过 `--event` 附加。普通 `outcome=success`、decision 或 finding 不自动改写当前阶段；只有明确的 `plan / progress` 事件参与阶段恢复。阶段变更时使用旧阶段 / 过期下一步对应的事件 ID 做 `--supersedes`，只替代已确认过时的记录，不顺带关闭其他阻塞。若同一阶段的多个旧事件都含过期下一步，可在同一请求里增加多个带 `--supersedes <id>` 的合法 `finding` 事件，逐条说明待办已经过时或完成；不要使用未定义的 `correction` 类型。
+- 只有阶段事件的回流不调用模型；完整任务结果与事件共用原有结果提炼路径，最多一次模型提炼，不另发事件请求。已能给出可靠摘要且不需候选经验提炼时，可带 `--summary` 避免模型调用。
 
 ## 全局规则
 
