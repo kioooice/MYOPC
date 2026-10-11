@@ -109,6 +109,12 @@ class ResearchContracts(unittest.TestCase):
         self.assertEqual(r['items'][0]['publication_date'],'2026-10-10')
         self.assertEqual(r['items'][0]['section'],'yesterday')
 
+    def test_pending_leads_do_not_appear_as_morning_updates(self):
+        r={'items':[{'title':'待核线索','section':'morning','publication_date':'2026-10-11','body':'聚合转述','verification':'待核'}], 'highlights':[]}
+        r=briefs.organize_report(r,'frontier','2026-10-11')
+        self.assertEqual(r['items'],[])
+        self.assertNotIn('## 今晨更新',r['markdown'])
+
 
 if __name__ == '__main__':
     unittest.main()

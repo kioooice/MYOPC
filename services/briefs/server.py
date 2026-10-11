@@ -400,6 +400,8 @@ def reconcile_source_dates(report, readable, day):
         if not known:
             continue
         published = max(known)
+        if item.get('section') in ('yesterday', 'morning', 'supplement') and not re.search('未核实|待核', item.get('verification', '') + item.get('title', '')):
+            item['section'] = 'yesterday' if published == yesterday else 'morning' if published == day else 'supplement'
         if item.get('publication_date') not in known:
             item['publication_date'] = published
             if item.get('section') == 'yesterday':
@@ -417,7 +419,7 @@ def organize_report(report, slug, day):
             continue
         section = item.get('section', 'supplement')
         dates = (item.get('publication_date'), item.get('event_date'))
-        unverified = '未核实' in item.get('verification', '')
+        unverified = bool(re.search('未核实|待核', item.get('verification', '') + item.get('title', '')))
         if slug == 'frontier':
             if unverified:
                 continue
