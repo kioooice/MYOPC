@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import base64
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -73,6 +75,14 @@ class ResearchContracts(unittest.TestCase):
         self.assertFalse(r['video_watched'])
         self.assertNotIn('secret()', r['text'])
         self.assertEqual(r['metadata']['article:published_time'], '2026-10-10')
+
+    def test_github_file_is_read_as_source_not_executed(self):
+        payload = json.dumps({'encoding': 'base64', 'content': base64.b64encode(b'print("do not execute")').decode(), 'sha': 'source-revision'})
+        with patch.object(briefs, 'fetch', return_value=(payload, 'https://api.github.com/repos/example/project/contents/file.py', 'application/json')):
+            r = briefs.read_page('https://github.com/example/project/blob/main/file.py')
+        self.assertEqual(r['text'], 'print("do not execute")')
+        self.assertEqual(r['metadata']['github_sha'], 'source-revision')
+        self.assertFalse(r['video_watched'])
 
     def test_old_release_is_structurally_removed_from_yesterday(self):
         r={'items':[{'title':'旧发布','section':'yesterday','publication_date':'2026-10-09','event_date':'2026-10-08','body':'原始内容','verification':'事实'}], 'highlights':[], 'warnings':[]}

@@ -1,5 +1,6 @@
 """Read-only web research and a standalone daily briefing reader."""
 import argparse
+import base64
 import concurrent.futures
 import datetime as dt
 import html
@@ -142,6 +143,19 @@ def search(query, language='zh'):
 def read_page(url):
     if 'github.com/' in url and '/blob/' in url:
         url = url.replace('https://github.com/', 'https://raw.githubusercontent.com/').replace('/blob/', '/')
+    raw = re.match(r'https://raw\.githubusercontent\.com/([^/]+/[^/]+)/([^/]+)/(.+)', url)
+    if raw:
+        api_url = 'https://api.github.com/repos/' + raw[1] + '/contents/' + raw[3] + '?' + urllib.parse.urlencode({'ref': raw[2]})
+        try:
+            body, _, _ = fetch(api_url)
+            item = json.loads(body)
+            if item.get('encoding') == 'base64' and item.get('content'):
+                return {'url': url, 'resolved_url': url, 'title': raw[3],
+                        'text': base64.b64decode(item['content']).decode('utf-8', errors='replace')[:16000],
+                        'metadata': {'github_sha': item.get('sha')}, 'links': [], 'video_watched': False,
+                        'note': 'Public source text excerpt read through GitHub Contents API; not executed.'}
+        except Exception:
+            pass
     body, final, mime = fetch(url)
     if 'html' not in mime:
         return {'url': url, 'resolved_url': final, 'title': final.rsplit('/', 1)[-1],
