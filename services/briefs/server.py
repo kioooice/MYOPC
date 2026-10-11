@@ -360,7 +360,7 @@ def editorial_check(config, task, report, evidence, day):
         'experience': '当前任务只审AI使用经验精选。时间开放，绝不应用日报的昨天筛选；真实实践section=experience，证据不足删除，不安排项目与练习。'
     }[task['slug']]
     requirements = {
-        'creative': '只有标题、热榜、摘要、链接，没有原文事件/人物关系/故事段落/细节的条目，不算内容素材候选。不得用未核实候选凑数；标题线索最多2条且不计入内容候选。单独表达参考不能凑数。工作流实际看过关键源码才能说明实现；未看演示、未运行必须说明。不要保留此前误套的昨日不足警告。',
+        'creative': '只有标题、热榜、摘要、链接，没有原文事件/人物关系/故事段落/细节的条目，不算内容素材候选。不得用未核实候选凑数；标题线索最多2条且不计入内容候选。单独表达参考不能凑数。工作流实际看过关键源码才能说明实现；未看演示、未运行必须说明。源码研究消化成成果与可吸收做法，不向用户展开字段、函数、安装步骤、架构细节。不要保留此前误套的昨日不足警告。',
         'frontier': '昨日主体只保留实际原始发布或实质新增。原始来源在前几日发布的内容，昨天被转载或集中消化，绝不能算昨日新消息；必须排除“昨日集中消化”条目。来源元数据优先于初稿自填日期，所有完整时间戳先转换北京时间。对arXiv使用citation_online_date/citation_date或提交历史，新版本需说明昨天新增什么。时间不明不放昨日。今晨和补充单列，旧事项无变化不重报。昨日不足就缩短，不称完整日报。',
         'experience': '作者情境、行为改变、真实结果必须有实际正文依据；只有标题删除。区分作者自述、独立验证和编辑推断，不凭点赞或星数认定有效，不编对话、收益；不要保留此前误套的昨日不足警告。'
     }[task['slug']]
@@ -400,13 +400,17 @@ def reconcile_source_dates(report, readable, day):
         if not known:
             continue
         published = max(known)
-        if item.get('section') in ('yesterday', 'morning', 'supplement') and not re.search('未核实|待核', item.get('verification', '') + item.get('title', '')):
+        if item.get('section') in ('yesterday', 'morning', 'supplement') and not pending_item(item):
             item['section'] = 'yesterday' if published == yesterday else 'morning' if published == day else 'supplement'
         if item.get('publication_date') not in known:
             item['publication_date'] = published
             if item.get('section') == 'yesterday':
                 item['section'] = 'morning' if published == day else 'supplement' if published != yesterday else 'yesterday'
             report.setdefault('warnings', []).append('已依据原始来源日期校正：' + item.get('title', '') + '（北京时间 ' + published + '）。')
+
+
+def pending_item(item):
+    return any(item.get(key, '').strip().startswith(('未核实', '待核')) for key in ('title', 'verification'))
 
 
 def organize_report(report, slug, day):
@@ -419,7 +423,7 @@ def organize_report(report, slug, day):
             continue
         section = item.get('section', 'supplement')
         dates = (item.get('publication_date'), item.get('event_date'))
-        unverified = bool(re.search('未核实|待核', item.get('verification', '') + item.get('title', '')))
+        unverified = pending_item(item)
         if slug == 'frontier':
             if unverified:
                 continue

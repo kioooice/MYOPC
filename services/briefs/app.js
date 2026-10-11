@@ -57,6 +57,7 @@ async function choose(slug, issueId, keepPosition = false) {
   const newest = selected.reports[0];
   status(newest?.status === "running" ? "新一期正在搜集资料与核对来源。完成后会出现在期刊列表中。" : newest?.status === "failed" ? (completed.length ? "新一期未完成，上一期内容仍可阅读。请选择日期查看本次状态。" : "首期研究未达到核验要求，暂未发布正文。") : "");
   if (!chosen) { report = null; empty("信息通道已就绪", "首份简报尚未生成。每期内容经过搜索、来源读取与整理后才会展示。"); return; }
+  if (!keepPosition) empty("正在读取这一期", "内容与来源正在载入。");
   const requestedTask = selected.slug;
   const loaded = await api(`/api/reports/${chosen.id}`); if (selected.slug !== requestedTask) return;
   report = loaded;
