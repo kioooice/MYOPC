@@ -74,6 +74,18 @@ class ResearchContracts(unittest.TestCase):
         self.assertNotIn('secret()', r['text'])
         self.assertEqual(r['metadata']['article:published_time'], '2026-10-10')
 
+    def test_old_release_is_structurally_removed_from_yesterday(self):
+        r={'items':[{'title':'旧发布','section':'yesterday','publication_date':'2026-10-09','event_date':'2026-10-08','body':'原始内容','verification':'事实'}], 'highlights':[], 'warnings':[]}
+        r=briefs.organize_report(r,'frontier','2026-10-11')
+        self.assertNotIn('## 昨日新进展',r['markdown'])
+        self.assertEqual(r['items'][0]['section'],'supplement')
+
+    def test_creative_has_no_yesterday_constraint_and_title_leads_do_not_count(self):
+        r={'items':[{'title':'旧故事原文','section':'creative','publication_date':'2020-01-01','event_date':'unknown','source_urls':['https://example.org/story'],'body':'真实故事','verification':'事实'}, {'title':'榜单标题','section':'creative','source_urls':['https://tophub.today/list'],'body':'只有标题','verification':'事实'}], 'highlights':[]}
+        r=briefs.organize_report(r,'creative','2026-10-11')
+        self.assertIn('素材 1 条',r['headline'])
+        self.assertEqual(r['items'][1]['section'],'supplement')
+
 
 if __name__ == '__main__':
     unittest.main()
