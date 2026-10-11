@@ -51,7 +51,7 @@ async function choose(slug, issueId, keepPosition = false) {
   $("category").textContent = selected.title; $("heading").textContent = selected.title; $("description").textContent = selected.description; $("eyebrow").textContent = labels[selected.slug][1]; nav();
   const completed = selected.reports.filter(r => ["ready","limited"].includes(r.status));
   const chosen = issueId ? selected.reports.find(r => r.id === issueId) : completed[0] || selected.reports[0];
-  $("issues").replaceChildren(...selected.reports.map(r => { const state = {running:"研究中",failed:"未完成",ready:"已更新",limited:"含核验限制"}[r.status]; const o = node("option", `${r.day} · ${state}`); o.value = r.id; o.selected = chosen?.id === r.id; return o; }));
+  $("issues").replaceChildren(...selected.reports.map(r => { const state = {running:"研究中",failed:"未完成",ready:"已更新",limited:"含核验限制"}[r.status]; const multiple = selected.reports.some(other => other.id !== r.id && other.day === r.day); const time = multiple ? ` ${(r.finished || r.started || "").slice(11,16)}` : ""; const o = node("option", `${r.day}${time} · ${state}`); o.value = r.id; o.selected = chosen?.id === r.id; return o; }));
   if (!selected.reports.length) { $("issues").append(node("option", "首期尚未生成")); $("issues").disabled = true; } else $("issues").disabled = false;
   ["highlights","limitations","sources"].forEach(id => $(id).hidden = true); $("toc").replaceChildren(); $("finished").textContent = ""; $("readtime").textContent = "";
   const newest = selected.reports[0];

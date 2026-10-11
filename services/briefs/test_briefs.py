@@ -3,6 +3,7 @@ import json
 import base64
 from pathlib import Path
 import unittest
+import tempfile
 from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('briefs', Path(__file__).with_name('server.py'))
@@ -11,6 +12,29 @@ spec.loader.exec_module(briefs)
 
 
 class ResearchContracts(unittest.TestCase):
+    def test_short_audited_draft_triggers_more_research_before_publication(self):
+        short = {'markdown': '实际资料' * 20, 'items': [{'title': '真实案例'}]}
+        full = {'markdown': '新的独立材料' * 580, 'items': [{'title': '真实案例'}, {'title': '新增案例'}]}
+        with tempfile.TemporaryDirectory() as directory:
+            data = Path(directory)
+            (data / 'model.json').write_text('{}')
+            connections = []
+            original_database = briefs.database
+            def tracked_database():
+                connection = original_database()
+                connections.append(connection)
+                return connection
+            with patch.object(briefs, 'DATA', data), patch.object(briefs, 'database', side_effect=tracked_database), patch.object(briefs, 'research_draft', return_value='{}') as draft, patch.object(briefs, 'editorial_check', side_effect=[short, full]), patch.object(briefs, 'validate_report', return_value=[]):
+                self.assertTrue(briefs.run_task({'slug': 'experience', 'title': '经验', 'prompt': '原始指令'}, force=True))
+                self.assertEqual(draft.call_count, 2)
+                self.assertTrue(any('继续联网补充' in m.get('content', '') for m in draft.call_args.args[1]))
+                with briefs.database() as connection:
+                    row = connection.execute('SELECT status,markdown FROM reports').fetchone()
+                    self.assertEqual(row['status'], 'ready')
+                    self.assertEqual(row['markdown'], full['markdown'])
+                for connection in connections:
+                    connection.close()
+
     def evidence(self):
         return [{'tool': 'web_read', 'result': {'url': u, 'resolved_url': u, 'text': '实际来源内容' * 80}}
                 for u in ('https://example.org/a', 'https://example.org/b')]
@@ -37,6 +61,12 @@ class ResearchContracts(unittest.TestCase):
         r = self.report()
         r['markdown'] += '\n[未读取](https://example.org/c)'
         self.assertTrue(briefs.validate_report(r, self.evidence(), 'creative', '2026-10-11'))
+
+    def test_actually_read_short_post_is_not_marked_unread(self):
+        r = self.report()
+        e = self.evidence()
+        e[0]['result']['text'] = '作者原帖：十瓦灯一度电可亮一百小时；金额还取决于使用时长和电价，不能推断完整家庭故事。'
+        self.assertEqual(briefs.validate_report(r, e, 'creative', '2026-10-11'), [])
 
     def test_one_real_source_is_kept_with_quantity_limit(self):
         r = self.report()
@@ -106,6 +136,18 @@ class ResearchContracts(unittest.TestCase):
     def test_source_timestamp_is_converted_to_beijing_date(self):
         r={'items':[{'title':'跨时区发布','section':'yesterday','publication_date':'2026-10-09','source_urls':['https://example.org/release']} ]}
         briefs.reconcile_source_dates(r,[{'url':'https://example.org/release','metadata':{'article:published_time':'2026-10-09T19:00:00Z'}}],'2026-10-11')
+        self.assertEqual(r['items'][0]['publication_date'],'2026-10-10')
+        self.assertEqual(r['items'][0]['section'],'yesterday')
+
+    def test_newer_repost_does_not_override_older_release(self):
+        r={'items':[{'title':'旧发布的新转载','section':'yesterday','publication_date':'2026-10-10','source_urls':['https://example.org/original','https://example.org/repost']} ]}
+        briefs.reconcile_source_dates(r,[{'url':'https://example.org/original','metadata':{'article:published_time':'2026-10-08'}},{'url':'https://example.org/repost','metadata':{'article:published_time':'2026-10-10'}}],'2026-10-11')
+        self.assertEqual(r['items'][0]['publication_date'],'2026-10-08')
+        self.assertEqual(r['items'][0]['section'],'supplement')
+
+    def test_explicit_new_announcement_date_overrides_older_background(self):
+        r={'items':[{'title':'实质新更新','section':'yesterday','publication_date':'2026-10-10','publication_source_url':'https://example.org/update','source_urls':['https://example.org/background','https://example.org/update']} ]}
+        briefs.reconcile_source_dates(r,[{'url':'https://example.org/background','metadata':{'article:published_time':'2026-10-08'}},{'url':'https://example.org/update','metadata':{'article:published_time':'2026-10-10'}}],'2026-10-11')
         self.assertEqual(r['items'][0]['publication_date'],'2026-10-10')
         self.assertEqual(r['items'][0]['section'],'yesterday')
 
