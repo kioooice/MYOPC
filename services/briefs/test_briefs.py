@@ -96,6 +96,19 @@ class ResearchContracts(unittest.TestCase):
         self.assertIn('素材 1 条',r['headline'])
         self.assertEqual(r['items'][1]['section'],'supplement')
 
+    def test_original_paper_date_overrides_repost_date(self):
+        r={'items':[{'title':'昨日消化的旧论文','section':'yesterday','publication_date':'2026-10-10','event_date':'2026-10-06','source_urls':['https://arxiv.org/abs/1234'],'body':'原文','verification':'事实'}], 'highlights':[]}
+        briefs.reconcile_source_dates(r,[{'url':'https://arxiv.org/abs/1234','metadata':{'citation_date':'2026/10/06'}}],'2026-10-11')
+        r=briefs.organize_report(r,'frontier','2026-10-11')
+        self.assertEqual(r['items'][0]['section'],'supplement')
+        self.assertNotIn('## 昨日新进展',r['markdown'])
+
+    def test_source_timestamp_is_converted_to_beijing_date(self):
+        r={'items':[{'title':'跨时区发布','section':'yesterday','publication_date':'2026-10-09','source_urls':['https://example.org/release']} ]}
+        briefs.reconcile_source_dates(r,[{'url':'https://example.org/release','metadata':{'article:published_time':'2026-10-09T19:00:00Z'}}],'2026-10-11')
+        self.assertEqual(r['items'][0]['publication_date'],'2026-10-10')
+        self.assertEqual(r['items'][0]['section'],'yesterday')
+
 
 if __name__ == '__main__':
     unittest.main()

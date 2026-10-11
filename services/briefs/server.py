@@ -375,7 +375,36 @@ items逐条对应真正保留的条目，含title/section/publication_date/event
         '原始任务：\n' + task['prompt'] + '\n实际读取来源：\n' + json.dumps(readable, ensure_ascii=False) +
         '\n初稿：\n' + json.dumps(report, ensure_ascii=False)}], final=True)
     revised = json.loads(result['choices'][0]['message']['content'])
+    if task['slug'] == 'frontier':
+        reconcile_source_dates(revised, readable, day)
     return organize_report(revised, task['slug'], day)
+
+
+def reconcile_source_dates(report, readable, day):
+    """Source publication metadata takes precedence over a draft's guessed dates."""
+    source_days = {}
+    for source in readable:
+        meta = source.get('metadata', {})
+        value = next((meta[k] for k in ('citation_online_date', 'citation_date', 'article:published_time', 'published_time') if meta.get(k)), None)
+        if not isinstance(value, str):
+            continue
+        try:
+            parsed = dt.datetime.fromisoformat(value.replace('/', '-').replace('Z', '+00:00'))
+            published = (parsed.astimezone(TZ) if parsed.tzinfo else parsed).date().isoformat()
+            source_days[source['url'].rstrip('/')] = published
+        except ValueError:
+            continue
+    yesterday = (dt.date.fromisoformat(day) - dt.timedelta(days=1)).isoformat()
+    for item in report.get('items', []):
+        known = [source_days[u.rstrip('/')] for u in item.get('source_urls', []) if u.rstrip('/') in source_days]
+        if not known:
+            continue
+        published = max(known)
+        if item.get('publication_date') not in known:
+            item['publication_date'] = published
+            if item.get('section') == 'yesterday':
+                item['section'] = 'morning' if published == day else 'supplement' if published != yesterday else 'yesterday'
+            report.setdefault('warnings', []).append('已依据原始来源日期校正：' + item.get('title', '') + '（北京时间 ' + published + '）。')
 
 
 def organize_report(report, slug, day):
