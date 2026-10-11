@@ -55,14 +55,15 @@ async function choose(slug, issueId, keepPosition = false) {
   if (!selected.reports.length) { $("issues").append(node("option", "首期尚未生成")); $("issues").disabled = true; } else $("issues").disabled = false;
   ["highlights","limitations","sources"].forEach(id => $(id).hidden = true); $("toc").replaceChildren(); $("finished").textContent = ""; $("readtime").textContent = "";
   const newest = selected.reports[0];
-  status(newest?.status === "running" ? "新一期正在搜集资料与核对来源。完成后会出现在期刊列表中。" : newest?.status === "failed" ? "新一期未完成，上一期内容仍可阅读。请选择日期查看本次状态。" : "");
+  status(newest?.status === "running" ? "新一期正在搜集资料与核对来源。完成后会出现在期刊列表中。" : newest?.status === "failed" ? (completed.length ? "新一期未完成，上一期内容仍可阅读。请选择日期查看本次状态。" : "首期研究未达到核验要求，暂未发布正文。") : "");
   if (!chosen) { report = null; empty("信息通道已就绪", "首份简报尚未生成。每期内容经过搜索、来源读取与整理后才会展示。"); return; }
   const requestedTask = selected.slug;
   const loaded = await api(`/api/reports/${chosen.id}`); if (selected.slug !== requestedTask) return;
   report = loaded;
   if (!keepPosition) { window.scrollTo(0,0); const u = new URL(location.href); u.searchParams.set("issue",report.id); history.replaceState({}, "",u); }
   if (!["ready","limited"].includes(report.status)) {
-    empty(report.status === "running" ? "这一期，正在研究" : "这一期尚未完成", report.status === "running" ? "正在拓宽来源、阅读原文并核对证据。内容准备好后会自动出现。" : `研究未能完成，未发布替代内容。${report.error || ""}`); return;
+    const reason = /Research|item-level|Missing/.test(report.error || "") ? "本轮资料不足或来源核验未通过，未发布替代内容。" : /Model|model|HTTP/.test(report.error || "") ? "模型服务暂时未能完成整理，已有期刊会保留。" : "研究未能完成，已保留取得的资料，等待重新核验。";
+    empty(report.status === "running" ? "这一期，正在研究" : "这一期尚未完成", report.status === "running" ? "正在拓宽来源、阅读原文并核对证据。内容准备好后会自动出现。" : reason); return;
   }
   $("highlights").hidden = false; $("headline").textContent = report.headline; $("summary").textContent = report.summary;
   $("highlight-list").replaceChildren(...report.highlights.map(t => node("li",t)));

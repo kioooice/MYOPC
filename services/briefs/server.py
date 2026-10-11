@@ -216,12 +216,26 @@ def update_report(rid, **fields):
 def validate_report(report, evidence, slug, day):
     read_urls = {u for e in evidence if e['tool'] == 'web_read' and not e['result'].get('error') and len(e['result'].get('text', '')) > 250
                  for u in (e['result'].get('url'), e['result'].get('resolved_url')) if u}
+    # A read GitHub README also supports its equivalent human-facing repo link.
+    for u in list(read_urls):
+        m = re.match(r'https://raw\.githubusercontent\.com/([^/]+/[^/]+)/([^/]+)/(.+)', u)
+        if m:
+            read_urls.add('https://github.com/' + m[1] + '/blob/' + m[2] + '/' + m[3])
+            if m[3].lower().startswith('readme'):
+                read_urls.add('https://github.com/' + m[1])
+    def canonical(u):
+        p = urllib.parse.urlsplit(u)
+        return (p.hostname or '').removeprefix('www.') + p.path.rstrip('/') + ('?' + p.query if p.query else '')
     markdown = report.get('markdown', '')
     citations = re.findall(r'\]\((https?://[^\s)]+)\)', markdown)
-    if len(read_urls) < 2 or len(set(citations) & read_urls) < 2:
-        raise ValueError('Research did not produce at least two actually-read cited sources')
-    unknown = [u for u in citations if u not in read_urls]
+    supported = {canonical(u) for u in read_urls}
+    verified_citations = {canonical(u) for u in citations} & supported
+    if not verified_citations:
+        raise ValueError('Research did not produce any actually-read cited source')
+    unknown = [u for u in citations if canonical(u) not in supported]
     warnings = list(report.get('warnings', []))
+    if len(verified_citations) < 2:
+        warnings.append('本期可核验来源有限，按实际材料缩短，未达到常规精选数量。')
     if not isinstance(report.get('items'), list) or not report['items']:
         raise ValueError('Missing item-level dates and evidence classifications')
     if unknown:

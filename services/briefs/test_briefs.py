@@ -36,6 +36,18 @@ class ResearchContracts(unittest.TestCase):
         r['markdown'] += '\n[未读取](https://example.org/c)'
         self.assertTrue(briefs.validate_report(r, self.evidence(), 'creative', '2026-10-11'))
 
+    def test_one_real_source_is_kept_with_quantity_limit(self):
+        r = self.report()
+        r['markdown'] = '[实际来源](https://example.org/a)'
+        self.assertTrue(briefs.validate_report(r, self.evidence()[:1], 'creative', '2026-10-11'))
+
+    def test_readme_can_be_cited_at_equivalent_repository(self):
+        r = self.report()
+        r['markdown'] = '[项目](https://github.com/example/project)\n[原文](https://example.org/b)'
+        e = self.evidence()
+        e[0]['result']['url'] = e[0]['result']['resolved_url'] = 'https://raw.githubusercontent.com/example/project/main/README.md'
+        self.assertEqual(briefs.validate_report(r, e, 'creative', '2026-10-11'), [])
+
     def test_missing_item_evidence_is_rejected(self):
         r = self.report()
         r['items'] = []
