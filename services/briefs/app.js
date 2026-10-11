@@ -1,6 +1,6 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
-const labels = {frontier: ["01", "AI FRONTIER", "新能力、真实进展与早期信号"], creative: ["02", "CREATIVE MATERIALS", "具体素材与可吸收的工作流"], experience: ["03", "WAYS OF WORKING", "从真实实践里，找到更好的用法"]};
+const labels = {frontier: ["02", "AI FRONTIER", "新能力、真实进展与早期信号"], creative: ["01", "CREATIVE MATERIALS", "具体素材与可吸收的工作流"], experience: ["03", "WAYS OF WORKING", "从真实实践里，找到更好的用法"]};
 let allTasks = [], selected = null, report = null, refreshTimer = null;
 let size = Number(localStorage.getItem("brief-font") || 18);
 size = Math.max(16, Math.min(24, size));
