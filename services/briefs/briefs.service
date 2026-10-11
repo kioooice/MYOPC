@@ -1,0 +1,16 @@
+[Unit]
+Description=Daily brief reading service
+After=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/opt/apps/briefs
+Environment=BRIEFS_DATA_DIR=/opt/data/briefs
+ExecStart=/usr/bin/python3 /opt/apps/briefs/server.py serve --port 3031
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

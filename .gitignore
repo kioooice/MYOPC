@@ -11,3 +11,5 @@ coverage/
 .release-commit
 
 tsconfig.tsbuildinfo
+services/briefs/.data/
+services/briefs/__pycache__/

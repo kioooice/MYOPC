@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>每日精选</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="/frontier"><span class="brand-mark">阅</span><span>每日精选<small>让信息成为新的可能</small></span></a>
+  <nav aria-label="简报栏目" id="navigation"></nav>
+  <div class="sidebar-foot"><span class="live-dot"></span>每日 09:00 更新<small>北京时间 · 独立研究与精选</small></div>
+</aside>
+<main>
+  <header class="topbar"><span id="category">每日简报</span><div class="reading-tools"><button id="font-down" aria-label="缩小文字">A−</button><button id="font-up" aria-label="放大文字">A+</button><button id="theme" aria-label="切换夜间阅读">夜间</button></div></header>
+  <section class="masthead"><div class="eyebrow" id="eyebrow">DAILY READING</div><h1 id="heading">每日精选</h1><p id="description">三个独立的信息通道，一处安静的阅读空间。</p><div class="issue-bar"><label for="issues">阅读期刊</label><select id="issues"><option>正在载入…</option></select><span id="readtime"></span></div></section>
+  <div id="status" role="status" class="status" hidden></div>
+  <div class="reading-layout">
+    <div class="content-column">
+      <section class="highlights" id="highlights" hidden><span class="section-label">这一期，先看这些</span><h2 id="headline"></h2><p id="summary"></p><ul id="highlight-list"></ul></section>
+      <section class="notice" id="limitations" hidden><details><summary>本期核验边界</summary><ul id="warning-list"></ul></details></section>
+      <article id="article" class="article" aria-label="简报正文"><div class="empty"><span>正在连接你的信息通道</span></div></article>
+      <section id="sources" class="sources" hidden><details><summary id="source-count">阅读来源</summary><div id="source-list"></div></details></section>
+      <footer class="footer">精选值得了解的变化，保留判断与核验边界。<span id="finished"></span></footer>
+    </div>
+    <aside class="toc"><span class="section-label">本期目录</span><nav id="toc" aria-label="正文目录"></nav><button id="back-top">回到顶部 ↑</button></aside>
+  </div>
+</main>
+<div class="reading-progress" id="progress"></div>
+</body></html>

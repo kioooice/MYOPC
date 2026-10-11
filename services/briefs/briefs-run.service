@@ -1,0 +1,13 @@
+[Unit]
+Description=Research the three daily briefs
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/apps/briefs
+Environment=BRIEFS_DATA_DIR=/opt/data/briefs
+ExecStart=/usr/bin/python3 /opt/apps/briefs/server.py run --all
+TimeoutStartSec=7200
+NoNewPrivileges=true
+PrivateTmp=true
