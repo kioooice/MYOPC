@@ -80,3 +80,58 @@ powershell -ExecutionPolicy Bypass -File D:\Projects\myopc\bridge\install.ps1
 已经在 OPC 里有实际工作的项目 / 工具（≥5 条记录，其中 ≥2 条是进展 / 环境 / 发现，且至少 1 条带验证依据），Codex 会自己检查知识仓库有没有对应条目；没有就起草一条最小条目（`projects/<id>.md` 或 `tools/<id>.md`，状态 `待核对`，`sources.repo` 写 OPC 身份）并提交推送，然后一句话告知——不需要用户在对话里手动要求。**只有想法、还没动手的不建条目**（留在对话里，或写成 `待验证` 的笔记）；工具要能真正用了才登记。内容只写已知事实，其余留给后续整理会话补充；长期没有新记录的空条目由整理会话标为已暂停或删除。
 
 Codex 的全局 `~/.codex/AGENTS.md` 里已加入对应约定：新会话进入已识别项目时先 `opc bootstrap` 恢复一次并核对本地事实；有历史经验影响做法时调用 `opc context`；关键阶段（决定、完成、环境变化、发现、阻塞）用 `opc result --event ...` 回流；普通改字、重复测试和每次工具调用不回流；同一会话不反复 bootstrap。
+
+## 可选 Hooks 隔离试点
+
+`opc-hooks.mjs` 是本地适配器，不是后台 Agent。配置、状态、审查模板及原生轨迹放在 `%LOCALAPPDATA%\OPC\hooks`，不进入业务仓库。默认未激活；`prepare-hooks-pilot.mjs` 仅复制脚本并生成模板，不修改 Codex 用户配置、项目配置或持久信任。运行需要 Node 在 Windows PATH 中。
+
+```powershell
+node bridge/prepare-hooks-pilot.mjs --root D:\Projects\myopc --home "$env:LOCALAPPDATA\OPC\hooks\myopc-desktop-probe"
+```
+
+默认 `probe` 只记录事件字段名、工具名和响应哈希，返回空 JSON，不注入背景、不续行、不回流测试数据。`pilot.json` 按真实目录边界限定项目，可进一步限定 `sessions`。加 `--active` 才生成执行试点：
+
+- `UserPromptSubmit` 通过既有 CLI 并行读取当前项目阶段与固定个人主题，单项超时 3.5 秒，正文限量并保留来源和截断标识。没有关键词分类、服务器模型选择或自动任务授权；知识方法仍由 Codex 判断是否调用 `opc context`。
+- 上下文提示 Codex 识别方法局限、研究外部成熟方法、比较与小试，再按实际授权集成。Hook 不寻找工具或自动安装工具；新增能力试用记录也不证明模型权重或作品质量增长。
+- 明确执行后，Codex 使用注入的 session / turn 登记 `arm` 契约。新消息使旧契约失效；停止、权限不足或范围改变时 `cancel`，原生 `Interrupt` 也取消。两项以内的检查使用绝对可执行程序与 argv，单项最多 8 秒。
+- `Stop` 重新执行登记检查；只有非零退出且匹配声明的 `failureContains` 才可续行。缺程序、超时、信号、未匹配失败标识等均是未知。未知、讨论、无契约、取消或已补修时正常结束。原生 `stop_hook_active` 与任务级原子领取文件共同限制最多一次补修。相同任务重新登记不能重置额度；检查通过也不等于整体验收。
+- `PostToolUse` 只观察原生已回调的工具，不解析结束语、不推断所有工具都受覆盖。失败 / 通过的每次本地验证独立保存，保留变化过程；不存用户原始消息、聊天全文或原生工具响应正文。
+
+每个检查应直接调用一项验证程序；首版拒绝 cmd / PowerShell / Bash 等 shell 包装，防止复合命令后面的成功遮蔽前面的失败。验证程序本身仍须正确传播退出码。Hook 只能核对登记的检查，不能独立保证 Codex 对授权和验收范围的判断正确，也不能证明未登记的事项已经完成。
+
+登记示例（session / turn 来自真实 Hook 上下文；只为明确获准任务登记）：
+
+```json
+{
+  "task": "明确的任务",
+  "mode": "execution",
+  "authorized": true,
+  "authorization_source": "当前用户消息定位",
+  "allowRepair": true,
+  "checks": [{
+    "name": "相关回归检查",
+    "program": "C:/Program Files/nodejs/node.exe",
+    "args": ["check.mjs"],
+    "failureContains": "ERR_ASSERTION"
+  }]
+}
+```
+
+将 JSON 通过 stdin 传给 `node <安装目录>/bin/opc-hooks.mjs arm --home <试点目录> --session <id> --turn <id>`。取消用同样参数调用 `cancel`，stdin 为 `{"reason":"..."}`。授权字段是 Codex 对当前授权的明确声明，不是脚本独立验证人类意图的结果；Hook 信任与业务授权不同。
+
+经验与能力过程复用原有 `opc result`，不新增数据库 / 页面 / 工具市场。`report` 默认只生成本地载荷，`--submit true` 才调用既有 CLI。需要 task、outcome、调用方 summary；相同载荷使用相同 submission_id，修改载荷使用新 ID，保留已有幂等契约。已有验证只是局部技术证据，任务 outcome 与 summary 仍是调用方声明。
+
+`adoptions` 每项必须有 `id / changed_choice / changed_action / evidence`，效果首版统一 `unknown`，拒绝用“命中”替代采用证据。可选 `capability_trials` 每项必须有 `gap / candidate / sources / baseline / trial_result / decision(adopt|defer|reject) / integration / evidence`；可附 `value_evidence`，缺少实际价值证据时明确未知。采用、暂缓、放弃与实际安装 / 工作流接入分开；这些均以调用方报告保存，不自动宣称独立验收。
+
+原生 CLI 验证器 `check-hooks-live.mjs` 在 OPC 私有目录新建合成夹具，冻结本次脚本并记录 SHA256 / CLI 版本、提示词、原生 JSONL 与事件。只读生产 OPC，不写测试结果到生产。
+
+```powershell
+node bridge/check-hooks-live.mjs --codex (Get-Command codex).Source --case probe --hooks
+node bridge/check-hooks-live.mjs --codex (Get-Command codex).Source --case probe --hooks --require-trust
+node bridge/check-hooks-live.mjs --codex (Get-Command codex).Source --case fix
+node bridge/check-hooks-live.mjs --codex (Get-Command codex).Source --case fix --hooks
+```
+
+支持 probe / discussion / fix / repair / knowledge / learn。`learn` 用明确的检验能力缺口观察 Codex 是否自行研究成熟方法、比较试用并留下可运行的多用例检查与过程载荷，不指定新工具；这是合成场景，不能冒充 Video 创作验收。带 `--hooks` 的自动测试默认使用官方一次性 `--dangerously-bypass-hook-trust`，仅用于已审查的本次脚本；不改变持久信任，也不绕过正常桌面审核。`--require-trust` 不使用这个参数，可核对未审核定义是否被跳过。`repair` 是人工设置的协议试验，不能作为自主性收益对照。基线与 Hook 的相同任务不改模型和工具条件；双方都完成时记录未证明增益，不据此推广。
+
+桌面端必须单独完成信任和真实事件验证。生成的 `codex-hooks.review.json` / TOML 模板可审查，但未写入用户默认层；不能把 CLI 的通过或手工调用处理器当作桌面通过。按[官方 Hooks 文档](https://learn.chatgpt.com/docs/hooks)审查并信任实际配置层的精确定义（CLI `/hooks`），定义变化须重新审查。先运行 MYOPC 的 probe，分别核对三个事件及原生输出，再进入少量 active 任务；通过实际行为对照后才考虑其他项目。当前状态与证据见项目日志。

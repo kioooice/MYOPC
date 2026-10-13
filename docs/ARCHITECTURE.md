@@ -19,6 +19,7 @@ MYOPC 是 Next.js 单体应用：React / TypeScript 前端、Node.js 服务端�
 | lib/knowledge/progress.ts | OPC V0.2：项目事件保存、恢复摘要组装、项目最近进展；这一层不调用模型 |
 | lib/workspace/types.ts、store.ts、service.ts | 阶段 2：四板块主题、追加历史记录、显式 heads 当前状态、来源解析、上下文组装与 JSON 导出 |
 | bridge/opc.mjs、bridge/install.ps1 | 本地 OPC Bridge：`opc context` / `opc result` / `opc bootstrap` / `opc candidates` / `opc workspace`，安装后与项目仓库无关 |
+| bridge/opc-hooks.mjs、prepare-hooks-pilot.mjs、check-hooks-live.mjs | 可选本地 Hooks 隔离适配与原生 CLI 验证；配置 / 状态 / 证据在 OPC 私有目录，不默认激活。复用既有 Bridge，详情见 bridge/README.md |
 | lib/business.ts、lib/db.ts | 历史业务读写与数据库结构 |
 | scripts/knowledge-sync.ts | 命令行同步与加工（可定时执行） |
 
