@@ -91,6 +91,23 @@ node bridge/prepare-hooks-pilot.mjs --root D:\Projects\myopc --home "$env:LOCALA
 
 默认 `probe` 只记录事件字段名、工具名和响应哈希，返回空 JSON，不注入背景、不续行、不回流测试数据。`pilot.json` 按真实目录边界限定项目，可进一步限定 `sessions`。加 `--active` 才生成执行试点：
 
+2026-10-13 用户扩大范围后，共用准备配置只包含两个正在推进的项目：`D:\Projects\myopc → kioooice/MYOPC` 和 `D:\Projects\video → video-project`。使用同一外部 runtime，不向 Video 复制脚本或配置。Video 设置 `kind: "video"`，额外提示创作质量边界；技术补修不替代听辨 / 观看验收，不自动恢复搁置作品、收费生成或发布。契约与回流绑定提交消息时的项目身份，不能在另一个项目运行或提交。
+
+多项目准备使用外部 JSON 数组（当前文件为 `%LOCALAPPDATA%\OPC\hooks\myopc-desktop-probe\active-projects.scopes.json`）：
+
+```json
+[
+  { "root": "D:/Projects/myopc", "repository": "kioooice/MYOPC", "mode": "probe" },
+  { "root": "D:/Projects/video", "repository": "video-project", "kind": "video", "mode": "probe" }
+]
+```
+
+```powershell
+node bridge/prepare-hooks-pilot.mjs --scopes "$env:LOCALAPPDATA\OPC\hooks\myopc-desktop-probe\active-projects.scopes.json" --home "$env:LOCALAPPDATA\OPC\hooks\myopc-desktop-probe"
+```
+
+单项目 `--root` 按现有 Bridge 路径映射识别身份，也可显式传 `--repository`，不再默认套 MYOPC；Video 可加 `--kind video`。两项目范围已配置，桌面信任与真实触发仍待完成，准备不等于已激活。
+
 - `UserPromptSubmit` 通过既有 CLI 并行读取当前项目阶段与固定个人主题，单项超时 3.5 秒，正文限量并保留来源和截断标识。没有关键词分类、服务器模型选择或自动任务授权；知识方法仍由 Codex 判断是否调用 `opc context`。
 - 上下文提示 Codex 识别方法局限、研究外部成熟方法、比较与小试，再按实际授权集成。Hook 不寻找工具或自动安装工具；新增能力试用记录也不证明模型权重或作品质量增长。
 - 明确执行后，Codex 使用注入的 session / turn 登记 `arm` 契约。新消息使旧契约失效；停止、权限不足或范围改变时 `cancel`，原生 `Interrupt` 也取消。两项以内的检查使用绝对可执行程序与 argv，单项最多 8 秒。

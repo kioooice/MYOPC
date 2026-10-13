@@ -156,4 +156,43 @@ describe("optional OPC hooks pilot", () => {
     const f = fixture(); await f.prompt();
     expect(() => f.arm([{ name: "masked failure", program: join(f.home, "pwsh.exe"), args: ["-Command", "bad-check; good-check"] }])).toThrow("validator directly");
   });
+
+  it("routes two project roots to their own identity and adds creative boundaries only to Video", async () => {
+    const f = fixture();
+    const video = join(f.home, "video"); mkdirSync(video);
+    mkdirSync(video + "-other");
+    writeFileSync(join(f.home, "pilot.json"), JSON.stringify({ scopes: [
+      { root: f.root, repository: "kioooice/MYOPC", mode: "active" },
+      { root: video, repository: "video-project", kind: "video", mode: "active" },
+    ] }));
+    const pilot = createPilot(f.home);
+    const seen = [];
+    const getter = async scope => { seen.push(scope.repository); return { repository: scope.repository }; };
+    const opc = await pilot.handle(f.event("UserPromptSubmit"), getter);
+    const creative = await pilot.handle(f.event("UserPromptSubmit", { cwd: video, session_id: "video-session" }), getter);
+    expect(seen).toEqual(["kioooice/MYOPC", "video-project"]);
+    expect(opc.hookSpecificOutput.additionalContext).not.toContain("Video 专用边界");
+    expect(creative.hookSpecificOutput.additionalContext).toContain("video-project");
+    expect(creative.hookSpecificOutput.additionalContext).toContain("不能判定声音身份");
+    expect(pilot.scopeFor(video + "-other")).toBeUndefined();
+    // Even identical session/turn identifiers cannot run an OPC contract in Video.
+    const contract = { task: "TEST ONLY cross-root", mode: "execution", authorized: true, authorization_source: "fixture", allowRepair: true, checks: [{ name: "fail", program: process.execPath, args: ["-e", "console.error('FAIL');process.exit(1)"], failureContains: "FAIL" }] };
+    pilot.control("arm", "test-session", "turn-one", contract);
+    expect(await pilot.handle(f.event("Stop", { cwd: video }))).toEqual({});
+  });
+
+  it("prepares one external runtime for both scopes without copying scripts into projects", async () => {
+    const f = fixture();
+    const video = join(f.home, "video"); mkdirSync(video);
+    const input = join(f.home, "scopes.json");
+    writeFileSync(input, JSON.stringify([{ root: f.root, repository: "kioooice/MYOPC" }, { root: video, repository: "video-project", kind: "video" }]));
+    const home = join(f.home, "shared-runtime");
+    const result = await execute(process.execPath, [fileURLToPath(new URL("../bridge/prepare-hooks-pilot.mjs", import.meta.url)), "--scopes", input, "--home", home], f.root, "", 3000, true);
+    expect(result.status).toBe("passed");
+    expect(JSON.parse(result.jsonOutput).activated).toBe(false);
+    expect(JSON.parse(readFileSync(join(home, "pilot.json"), "utf8")).scopes.map(s => s.repository)).toEqual(["kioooice/MYOPC", "video-project"]);
+    expect(readdirSync(video)).toEqual([]);
+    const rejected = await execute(process.execPath, [fileURLToPath(new URL("../bridge/prepare-hooks-pilot.mjs", import.meta.url)), "--scopes", input, "--home", join(video, "bad-runtime")], f.root, "", 3000);
+    expect(rejected.status).toBe("failed");
+  });
 });

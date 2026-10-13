@@ -1,6 +1,6 @@
 # 接手项目
 
-2026-10-13 新授权已转入 Codex Hooks + OPC 的 MYOPC 隔离实施，并补入主动学习与能力接入。Windows CLI 验证已执行，桌面真实触发与实际任务增益仍待核对；没有全局启用或推广到 Video。先看 docs/STATUS.md 顶部、docs/PROJECT_LOG.md 与 bridge/README.md 的试点说明，不把下方早期信息承接阶段当成当前任务上限。
+2026-10-13 新授权已转入 Codex Hooks + OPC 的隔离实施，并补入主动学习与能力接入。用户随后要求加入 Video，当前共享准备范围仅 MYOPC 与 Video。Windows CLI 验证已执行，两项目桌面真实触发与实际任务增益仍待核对；准备不等于已默认启用。先看 docs/STATUS.md 顶部、docs/PROJECT_LOG.md 与 bridge/README.md 的试点说明，不把下方早期信息承接阶段当成当前任务上限。
 
 2026-10-13 当前任务是将《AI与个人》的新理解嵌入 OPC。当前定位为人的理解、探索与判断和 AI 生产能力共同积累；原则以 docs/PRODUCT_SPEC.md 为准，个人表达保存在私有 workspace，通用方法进入独立知识仓库。用户明确“不需要有执行对话了”：当前对话直接完成实现与验证，旧双向交接、固定任务 ID / 模型分工不再适用。
 
