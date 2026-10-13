@@ -106,7 +106,9 @@ node bridge/prepare-hooks-pilot.mjs --root D:\Projects\myopc --home "$env:LOCALA
 node bridge/prepare-hooks-pilot.mjs --scopes "$env:LOCALAPPDATA\OPC\hooks\myopc-desktop-probe\active-projects.scopes.json" --home "$env:LOCALAPPDATA\OPC\hooks\myopc-desktop-probe"
 ```
 
-单项目 `--root` 按现有 Bridge 路径映射识别身份，也可显式传 `--repository`，不再默认套 MYOPC；Video 可加 `--kind video`。两项目范围已配置，桌面信任与真实触发仍待完成，准备不等于已激活。
+单项目 `--root` 按现有 Bridge 路径映射识别身份，也可显式传 `--repository`，不再默认套 MYOPC；Video 可加 `--kind video`。两项目范围已配置，桌面信任与真实触发仍待完成。
+
+准备目录不会被 Codex 自动扫描。定义必须接入当前加载的用户 / 项目配置层或已启用插件才能被发现。当前本机已将共用定义注册到 `~/.codex/hooks.json`，同时保留外部 `pilot.json` 的两项目目录限制；用户级位置便于桌面设置统一发现，不代表所有项目执行 OPC 动作。原生 `hooks/list` 已核对两目录各四项、零错误，信任状态均为 untrusted。设置页刷新后可审查；信任后先运行 probe，不能将被发现当成已触发。`prepare-hooks-pilot.mjs` 仍只负责准备，不自动覆盖已登记配置或修改信任。
 
 - `UserPromptSubmit` 通过既有 CLI 并行读取当前项目阶段与固定个人主题，单项超时 3.5 秒，正文限量并保留来源和截断标识。没有关键词分类、服务器模型选择或自动任务授权；知识方法仍由 Codex 判断是否调用 `opc context`。
 - 上下文提示 Codex 识别方法局限、研究外部成熟方法、比较与小试，再按实际授权集成。Hook 不寻找工具或自动安装工具；新增能力试用记录也不证明模型权重或作品质量增长。
