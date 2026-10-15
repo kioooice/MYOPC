@@ -723,3 +723,10 @@
 - 用户截图显示「未找到钩子」。核对发现此前仅生成 OPC 私有目录内的审查 JSON / TOML，`~/.codex/hooks.json` 和用户级试点 profile 均不存在，主配置也无对应定义，因此未进入当前配置发现路径；不是脚本按目录限定就不能列出。官方支持用户、受信任项目和已启用插件的配置层。
 - 以 create-new 方式将已有审查定义注册到本机 `~/.codex/hooks.json`，未覆盖配置、未修改持久信任、未切换 active；两目录仍为 probe，脚本 / 状态留在 OPC 私有目录，业务仓库无 Hook 配置。用户级登记便于设置发现，OPC 处理仍受两个目录范围限制。
 - 独立原生 app-server 完成 initialize → hooks/list，只读发现、未创建对话或运行模型。MYOPC 与 Video 各返回同样四项 user 来源定义，enabled=true / trustStatus=untrusted，warnings / errors 均为空。原始发现证据保存在 `OPC/hooks/myopc-desktop-probe/discovery-proof.json`；这不是运行桌面窗口的刷新截图或真实 Hook 事件验收。下一步刷新设置并审查 / 信任，保持探针范围，再核对实际回调。
+
+## 2026-10-15 按用户反馈移除独立每日精选部署
+
+- 用户反馈“效果不太好，而且可能还是没那么需要”，要求移除部署。本轮直接停用，不将阅读量 / 技术验证等同于内容价值，不继续优化或重新开展研究；源码仅留历史，未经新的明确要求不恢复。
+- 已停止并移除 `briefs-run.timer`、`briefs-run.service`、`briefs.service`；将独立应用、运行数据、systemd 定义与 `briefs-3030.conf` 移出运行位置，OpenResty 配置检查通过后平滑重载。服务器 3030/3031 无监听，相关 unit 文件、timer 和进程不再运行，原部署路径不存在。其他容器未重启，OPC 健康为 `ok / cfe1adf`，既有服务监听和知识同步 timer 保留。
+- 归档 `/opt/backups/briefs/removed-20261015T083433/` 权限 root 700，保存原始任务、数据库、来源证据、部署文件及清单；三个栏目各 5 份记录，SQLite 独立备份完整性 `ok`。原有历史备份保留。腾讯云安全组及原 ChatGPT 账号内任务未由本次操作修改。
+- 本机直连 socket 会先被本地网络代理接受，不能据握手误判端口仍开放；实际 HTTP 检查为代理侧 502，服务端监听与部署状态核对确认入口已移除。当前仅停用部署和更新文档，无应用代码变更，无需运行全量应用测试。
