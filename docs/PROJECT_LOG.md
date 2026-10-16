@@ -730,3 +730,12 @@
 - 已停止并移除 `briefs-run.timer`、`briefs-run.service`、`briefs.service`；将独立应用、运行数据、systemd 定义与 `briefs-3030.conf` 移出运行位置，OpenResty 配置检查通过后平滑重载。服务器 3030/3031 无监听，相关 unit 文件、timer 和进程不再运行，原部署路径不存在。其他容器未重启，OPC 健康为 `ok / cfe1adf`，既有服务监听和知识同步 timer 保留。
 - 归档 `/opt/backups/briefs/removed-20261015T083433/` 权限 root 700，保存原始任务、数据库、来源证据、部署文件及清单；三个栏目各 5 份记录，SQLite 独立备份完整性 `ok`。原有历史备份保留。腾讯云安全组及原 ChatGPT 账号内任务未由本次操作修改。
 - 本机直连 socket 会先被本地网络代理接受，不能据握手误判端口仍开放；实际 HTTP 检查为代理侧 502，服务端监听与部署状态核对确认入口已移除。当前仅停用部署和更新文档，无应用代码变更，无需运行全量应用测试。
+
+## 2026-10-16 解释无效果并仅启用 Video active
+
+- 用户反馈 Video Hook 基本在运行但体验无变化。实际共用配置两项目均为 probe，处理器该分支直接返回空 JSON；此前真实回调只能证明触发，不会注入背景、登记验证或要求补修。运行状态目录无契约 / 验证 / 采用报告，诊断已回流为 `evt-20261016-01299b`。此前“等待信任”的阶段也已过时：本次独立原生 app-server `hooks/list` 读取两目录，各四项 enabled / trusted，零警告 / 错误。
+- 用户批准“Video 有界 active、一次补修、保留费用与发布边界”后，仅将外部 `myopc-desktop-probe/pilot.json` 的 Video scope 改为 active，并同步 `active-projects.scopes.json`，MYOPC 保持 probe；修改前备份保存在此次验证目录。运行脚本与仓库源文件 SHA256 相符，未重装脚本或改动用户级 Hook 定义，定义文件哈希前后相同。下一条 Video 消息建立 active 轮次；旧轮次无契约不追溯续行。
+- 隔离目录使用安装脚本副本、同一真实 Video 路径与 OPC 背景接口：返回项目 `video-project`、当前阶段“专门案例优化结束，后续按真实作品需要改进”和两条个人记录；未用 MYOPC 阶段代替。讨论无契约正常结束；明确登记的夹具检查失败时仅一次返回 block，第二次同一失败不再请求续行；人工修正外部夹具后检查 passed，本地 report 正确绑定 Video，未把合成报告提交生产。Video git 状态前后相同，业务仓库无新增 Hook 文件。
+- 原始证据在 `%LOCALAPPDATA%/OPC/hooks/myopc-desktop-probe/validation/video-activation-2026-10-16T03-02-33-546Z/`：`activation-proof.json`、本次 `discovery-proof.json`、原配置备份、独立验证 / 报告文件。合成事件写入独立日志，没有混入共用真实事件日志。相关 Hook 16 项与 Bridge 12 项回归全部通过，差异检查通过；无运行时代码修改，无需应用构建或服务器部署。
+- 这次完成配置启用及处理器技术链路核对，没有在桌面 Video 真实任务中证明自动补修或创作收益。下一项正常获准任务中检查背景是否实际注入、Codex 是否登记适当检查、经验是否改变行动及结果；没有登记不会触发补修，report 仍须有据提交。保持实际效果未知，不另起影片、收费生成、发布、后台评测或推广 MYOPC active。
+- 任务回流 `task-20261016-007`，显式阶段 `evt-20261016-2bb670` 仅替代过时的 `evt-20261013-6daeef`；保留先前 probe 诊断及其他项目状态。使用调用方摘要，未额外调用模型提炼。

@@ -83,13 +83,13 @@ Codex 的全局 `~/.codex/AGENTS.md` 里已加入对应约定：新会话进入�
 
 ## 可选 Hooks 隔离试点
 
-`opc-hooks.mjs` 是本地适配器，不是后台 Agent。配置、状态、审查模板及原生轨迹放在 `%LOCALAPPDATA%\OPC\hooks`，不进入业务仓库。默认未激活；`prepare-hooks-pilot.mjs` 仅复制脚本并生成模板，不修改 Codex 用户配置、项目配置或持久信任。运行需要 Node 在 Windows PATH 中。
+`opc-hooks.mjs` 是本地适配器，不是后台 Agent。配置、状态、审查模板及原生轨迹放在 `%LOCALAPPDATA%\OPC\hooks`，不进入业务仓库。准备脚本默认生成 probe；本机现按 2026-10-16 用户授权仅启用 Video active，MYOPC 保持 probe。`prepare-hooks-pilot.mjs` 仅复制脚本并生成模板，不修改 Codex 用户配置、项目配置或持久信任。运行需要 Node 在 Windows PATH 中。
 
 ```powershell
 node bridge/prepare-hooks-pilot.mjs --root D:\Projects\myopc --home "$env:LOCALAPPDATA\OPC\hooks\myopc-desktop-probe"
 ```
 
-默认 `probe` 只记录事件字段名、工具名和响应哈希，返回空 JSON，不注入背景、不续行、不回流测试数据。`pilot.json` 按真实目录边界限定项目，可进一步限定 `sessions`。加 `--active` 才生成执行试点：
+默认 `probe` 只记录事件字段名、工具名和响应哈希，返回空 JSON，不注入背景、不续行、不回流测试数据。`pilot.json` 按真实目录边界限定项目，可进一步限定 `sessions`。多项目用各 scope 的 `mode` 单独控制；`--active` 会把本次准备的所有 scope 都设为 active，当前不要用于这两个项目的共用准备。
 
 2026-10-13 用户扩大范围后，共用准备配置只包含两个正在推进的项目：`D:\Projects\myopc → kioooice/MYOPC` 和 `D:\Projects\video → video-project`。使用同一外部 runtime，不向 Video 复制脚本或配置。Video 设置 `kind: "video"`，额外提示创作质量边界；技术补修不替代听辨 / 观看验收，不自动恢复搁置作品、收费生成或发布。契约与回流绑定提交消息时的项目身份，不能在另一个项目运行或提交。
 
@@ -98,7 +98,7 @@ node bridge/prepare-hooks-pilot.mjs --root D:\Projects\myopc --home "$env:LOCALA
 ```json
 [
   { "root": "D:/Projects/myopc", "repository": "kioooice/MYOPC", "mode": "probe" },
-  { "root": "D:/Projects/video", "repository": "video-project", "kind": "video", "mode": "probe" }
+  { "root": "D:/Projects/video", "repository": "video-project", "kind": "video", "mode": "active" }
 ]
 ```
 
@@ -106,9 +106,9 @@ node bridge/prepare-hooks-pilot.mjs --root D:\Projects\myopc --home "$env:LOCALA
 node bridge/prepare-hooks-pilot.mjs --scopes "$env:LOCALAPPDATA\OPC\hooks\myopc-desktop-probe\active-projects.scopes.json" --home "$env:LOCALAPPDATA\OPC\hooks\myopc-desktop-probe"
 ```
 
-单项目 `--root` 按现有 Bridge 路径映射识别身份，也可显式传 `--repository`，不再默认套 MYOPC；Video 可加 `--kind video`。两项目范围已配置，桌面信任与真实触发仍待完成。
+单项目 `--root` 按现有 Bridge 路径映射识别身份，也可显式传 `--repository`，不再默认套 MYOPC；Video 可加 `--kind video`。上面的单项目命令会重写整个 pilot 范围，维护现有共用安装时应使用同步后的 scopes 文件。模式修改在下次事件进程读取配置时生效；Video 下一条新消息建立 active 轮次，旧轮次没有契约不续行。
 
-准备目录不会被 Codex 自动扫描。定义必须接入当前加载的用户 / 项目配置层或已启用插件才能被发现。当前本机已将共用定义注册到 `~/.codex/hooks.json`，同时保留外部 `pilot.json` 的两项目目录限制；用户级位置便于桌面设置统一发现，不代表所有项目执行 OPC 动作。原生 `hooks/list` 已核对两目录各四项、零错误，信任状态均为 untrusted。设置页刷新后可审查；信任后先运行 probe，不能将被发现当成已触发。`prepare-hooks-pilot.mjs` 仍只负责准备，不自动覆盖已登记配置或修改信任。
+准备目录不会被 Codex 自动扫描。定义必须接入当前加载的用户 / 项目配置层或已启用插件才能被发现。当前本机已将共用定义注册到 `~/.codex/hooks.json`，同时保留外部 `pilot.json` 的两项目目录限制；用户级位置便于桌面设置统一发现，不代表所有项目执行 OPC 动作。2026-10-16 原生 `hooks/list` 已核对两目录各四项 enabled / trusted、零警告 / 错误；共用 probe 日志已有真实回调。此次仅修改 scope 模式，注册定义与信任未改动。`prepare-hooks-pilot.mjs` 仍只负责准备，不自动覆盖已登记配置或修改信任。
 
 - `UserPromptSubmit` 通过既有 CLI 并行读取当前项目阶段与固定个人主题，单项超时 3.5 秒，正文限量并保留来源和截断标识。没有关键词分类、服务器模型选择或自动任务授权；知识方法仍由 Codex 判断是否调用 `opc context`。
 - 上下文提示 Codex 识别方法局限、研究外部成熟方法、比较与小试，再按实际授权集成。Hook 不寻找工具或自动安装工具；新增能力试用记录也不证明模型权重或作品质量增长。
@@ -153,4 +153,4 @@ node bridge/check-hooks-live.mjs --codex (Get-Command codex).Source --case fix -
 
 支持 probe / discussion / fix / repair / knowledge / learn。`learn` 用明确的检验能力缺口观察 Codex 是否自行研究成熟方法、比较试用并留下可运行的多用例检查与过程载荷，不指定新工具；这是合成场景，不能冒充 Video 创作验收。带 `--hooks` 的自动测试默认使用官方一次性 `--dangerously-bypass-hook-trust`，仅用于已审查的本次脚本；不改变持久信任，也不绕过正常桌面审核。`--require-trust` 不使用这个参数，可核对未审核定义是否被跳过。`repair` 是人工设置的协议试验，不能作为自主性收益对照。基线与 Hook 的相同任务不改模型和工具条件；双方都完成时记录未证明增益，不据此推广。
 
-桌面端必须单独完成信任和真实事件验证。生成的 `codex-hooks.review.json` / TOML 模板可审查，但未写入用户默认层；不能把 CLI 的通过或手工调用处理器当作桌面通过。按[官方 Hooks 文档](https://learn.chatgpt.com/docs/hooks)审查并信任实际配置层的精确定义（CLI `/hooks`），定义变化须重新审查。先运行 MYOPC 的 probe，分别核对三个事件及原生输出，再进入少量 active 任务；通过实际行为对照后才考虑其他项目。当前状态与证据见项目日志。
+桌面 active 行为必须结合真实任务验证，不能把 CLI 通过或手工调用处理器当作桌面通过。当前用户级定义已注册且受信任，另生成的 `codex-hooks.review.json` / TOML 仍只是审查模板。按[官方 Hooks 文档](https://learn.chatgpt.com/docs/hooks)审查实际配置层的精确定义，定义变化须重新审查。下一项正常获准的 Video 任务中核对背景注入、适当检查登记及必要的中断 / 一次补修，并观察方法采用和结果。没有登记检查就不会补修；active 仍不能保证 Codex 判断正确或创作质量改善。MYOPC 保持 probe，不自动推广其他项目。当前证据见项目日志。
