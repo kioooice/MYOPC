@@ -1,5 +1,13 @@
 # MYOPC
 
+## Project overview
+
+MYOPC is a local-first operating layer for personal growth and one-person companies. It keeps sourced project state, history, and reusable knowledge connected to the work where they matter, so an AI collaborator can recover context, reuse proven methods, and return evidence-bound results instead of treating every task as a blank chat.
+
+The value is the feedback loop between AI execution and human judgment: the system records what was decided, what was actually verified, what remains uncertain, and what should change next. The working surface includes workspace continuity, knowledge-repository sync and reading notes, task-based knowledge reuse, and an OPC Bridge for structured task and phase results. Autonomous exploration, business automation, and capability evaluation remain explicitly under validation.
+
+For an implementation map, start with [Product Spec](docs/PRODUCT_SPEC.md), [Architecture](docs/ARCHITECTURE.md), and [Current Status](docs/STATUS.md). The repository is a working project with inspectable evidence, not a claim that autonomous behavior or business outcomes have already been achieved.
+
 支持个人发展与一人公司实践的线上应用。OPC 承接有来源的当前状态、历史与可复用知识，支持 AI 生产能力和人的理解、探索、判断共同积累。实际能力增长需要真实反馈验证，定位与边界见 [产品说明](docs/PRODUCT_SPEC.md)。
 
 当前已提供私有 workspace 状态承接与读取，以及独立知识仓库的索引、阅读说明和按任务取用；持续自主探索、自动经营与能力评测仍是待验证方向。
